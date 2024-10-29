@@ -1,4 +1,7 @@
-﻿using TorchSharp;
+﻿using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 
@@ -7,20 +10,23 @@ namespace Yolov5
 	internal class Program
 	{
 		private static string dataPath = @"..\..\..\Assets\coco128";
+		//private static string dataPath = @"C:\data\coco";
 		private static int sortCount = 80;
 		private static int epochs = 1000000;
-		private static float lr = 0.001f;
+		private static float lr = 0.01f;
+		private static int width = 640;
+		private static int height = 640;
 
 		static void Main(string[] args)
 		{
-			Train();
-			//Predict();
+			//Train();
+			Predict();
 		}
 
 		private static void Train()
 		{
-			YoloDataset yoloDataset = new YoloDataset(dataPath);
-			DataLoader loader = new DataLoader(yoloDataset, 32, num_worker: 32, shuffle: true, device: CUDA);
+			YoloDataset yoloDataset = new YoloDataset(dataPath, width, height);
+			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: CUDA);
 			Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount).cuda();
 			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).cuda();
 
@@ -75,14 +81,15 @@ namespace Yolov5
 		private static void Predict()
 		{
 			int predictIndex = 1;
-			float PredictThreshold = 0.5f;
+			float PredictThreshold = 0.4f;
 			float ObjectThreshold = 0.9f;
 			float NmsThreshold = 0.4f;
+			double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
+
 			List<Result> results = new List<Result>();
 
 			YoloDataset yoloDataset = new YoloDataset(dataPath);
 			Tensor input = yoloDataset.GetTensor(predictIndex)["image"].unsqueeze(0);
-
 			Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount).cuda();
 			yolo.load("result/best.bin");
 			yolo.eval();
@@ -117,6 +124,29 @@ namespace Yolov5
 				results = NMS(results, NmsThreshold);
 			}
 
+			Tensor mean = torch.tensor(means).view(3, 1, 1);
+			Tensor std = torch.tensor(stdevs).view(3, 1, 1);
+			Tensor orgImg = ((input.squeeze(0) * std + mean) * 255.0f).@byte().cpu();
+
+			orgImg = orgImg.index_select(0, tensor(new long[] { 2, 1, 0 }));
+			orgImg = orgImg.permute([1, 2, 0]).contiguous();
+			Bitmap bitmap = new Bitmap(width, height);
+			BitmapData bitmapData = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
+			Marshal.Copy(orgImg.bytes.ToArray(), 0, bitmapData.Scan0, width * height * 3);
+			bitmap.UnlockBits(bitmapData);
+
+			Graphics g = Graphics.FromImage(bitmap);
+			foreach (Result result in results)
+			{
+				Point point = new Point((int)(result.x - result.w / 2), (int)(result.y - result.h / 2));
+				Rectangle rect = new Rectangle(point, new System.Drawing.Size((int)result.w, (int)result.h));
+				string str = string.Format("Sort:{0}, Score:{1}", result.sort, result.score);
+				g.DrawRectangle(Pens.Red, rect);
+				g.DrawString(str, new Font(FontFamily.GenericMonospace, 10), new SolidBrush(Color.Red), point);
+
+			}
+			g.Save();
+			bitmap.Save("bitmap.jpg");
 
 		}
 
