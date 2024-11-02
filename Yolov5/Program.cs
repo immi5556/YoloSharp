@@ -11,6 +11,7 @@ namespace Yolov5
 	{
 		private static string dataPath = @"..\..\..\Assets\coco128";
 		//private static string dataPath = @"C:\data\coco";
+		//private static string dataPath = "D:\\DeepLearning\\yolo\\datasets\\coco128\\";
 		private static int sortCount = 80;
 		private static int epochs = 1000000;
 		private static float lr = 0.01f;
@@ -19,14 +20,18 @@ namespace Yolov5
 
 		static void Main(string[] args)
 		{
+
+			YoloDataset yoloDataset = new YoloDataset(dataPath);
+			yoloDataset.load_mosaic(10);
+
 			//Train();
-			Predict();
+			//Predict();
 		}
 
 		private static void Train()
 		{
 			YoloDataset yoloDataset = new YoloDataset(dataPath, width, height);
-			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: CUDA);
+			DataLoader loader = new DataLoader(yoloDataset, 32, num_worker: 32, shuffle: true, device: CUDA);
 			Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount).cuda();
 			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).cuda();
 
@@ -81,8 +86,8 @@ namespace Yolov5
 		private static void Predict()
 		{
 			int predictIndex = 1;
-			float PredictThreshold = 0.4f;
-			float ObjectThreshold = 0.9f;
+			float PredictThreshold = 0.07f;
+			float ObjectThreshold = 0.5f;
 			float NmsThreshold = 0.4f;
 			double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
 
@@ -91,7 +96,7 @@ namespace Yolov5
 			YoloDataset yoloDataset = new YoloDataset(dataPath);
 			Tensor input = yoloDataset.GetTensor(predictIndex)["image"].unsqueeze(0);
 			Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount).cuda();
-			yolo.load("result/best.bin");
+			yolo.load("result/last.bin");
 			yolo.eval();
 			Tensor[] tensors = yolo.forward(input.cuda());
 
@@ -147,6 +152,7 @@ namespace Yolov5
 			}
 			g.Save();
 			bitmap.Save("bitmap.jpg");
+
 
 		}
 
