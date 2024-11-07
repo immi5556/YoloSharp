@@ -1,16 +1,16 @@
 ﻿using TorchSharp;
 using static TorchSharp.torch;
 
-namespace Yolov5
+namespace YoloSharp
 {
-	internal class YoloDataset : torch.utils.data.Dataset
+	internal class YoloDataset : utils.data.Dataset
 	{
 		private static double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
 		private string rootPath = string.Empty;
 		private int imageSize = 0;
 		private List<string> imageFiles = new List<string>();
 		private bool useMosaic = true;
-		private Device device = torch.CUDA;
+		private Device device = CUDA;
 
 		public YoloDataset(string rootPath, int imageSize = 640, bool useMosaic = true, DeviceType deviceType = DeviceType.CUDA)
 		{
@@ -21,7 +21,7 @@ namespace Yolov5
 			string[] imagesFileNames = Directory.GetFiles(imagesFolder, "*.*", SearchOption.AllDirectories).Where(file =>
 			{
 				string extension = Path.GetExtension(file).ToLower();
-				return (extension == ".jpg" || extension == ".png" || extension == ".bmp");
+				return extension == ".jpg" || extension == ".png" || extension == ".bmp";
 			}).ToArray();
 			foreach (string imageFileName in imagesFileNames)
 			{
@@ -33,7 +33,7 @@ namespace Yolov5
 			}
 			this.imageSize = imageSize;
 			this.useMosaic = useMosaic;
-			this.device = new Device(deviceType);
+			device = new Device(deviceType);
 		}
 
 		private string GetLabelFileNameFromImageName(string imageFileName)
@@ -58,14 +58,14 @@ namespace Yolov5
 			return imageFiles[(int)index];
 		}
 
-		public override Dictionary<string, torch.Tensor> GetTensor(long index)
+		public override Dictionary<string, Tensor> GetTensor(long index)
 		{
-			Dictionary<string, torch.Tensor> outputs = new Dictionary<string, torch.Tensor>();
-			outputs.Add("index", torch.tensor(index));
+			Dictionary<string, Tensor> outputs = new Dictionary<string, Tensor>();
+			outputs.Add("index", tensor(index));
 			return outputs;
 		}
 
-		public (torch.Tensor, torch.Tensor) GetTensorByLetterBox(long index)
+		public (Tensor, Tensor) GetTensorByLetterBox(long index)
 		{
 			string file = imageFiles[(int)index];
 			Tensor orgImageTensor = torchvision.io.read_image(file).to(device);
@@ -74,13 +74,13 @@ namespace Yolov5
 			return (imgTensor.unsqueeze(0), lb.to(imgTensor.device));
 		}
 
-		public (torch.Tensor, torch.Tensor) GetTensorByMosaic(long index)
+		public (Tensor, Tensor) GetTensorByMosaic(long index)
 		{
 			var (img, lb) = load_mosaic(index);
 			return (img.unsqueeze(0), lb.to(img.device));
 		}
 
-		public (torch.Tensor, torch.Tensor) GetDataTensor(long index)
+		public (Tensor, Tensor) GetDataTensor(long index)
 		{
 			var (image, label) = useMosaic ? GetTensorByMosaic(index) : GetTensorByLetterBox(index);
 			if (image.shape.Length == 3)
@@ -146,20 +146,20 @@ namespace Yolov5
 					labelArray[i, 1] = float.Parse(labels[1]);
 					labelArray[i, 3] = float.Parse(labels[3]);
 
-					labelArray[i, 2] = (float.Parse(labels[2]) * (imageSize - 2 * pad) + pad) / (float)imageSize;
-					labelArray[i, 4] = float.Parse(labels[4]) * (imageSize - 2 * pad) / (float)imageSize;
+					labelArray[i, 2] = (float.Parse(labels[2]) * (imageSize - 2 * pad) + pad) / imageSize;
+					labelArray[i, 4] = float.Parse(labels[4]) * (imageSize - 2 * pad) / imageSize;
 				}
 				else
 				{
-					labelArray[i, 1] = (float.Parse(labels[1]) * (imageSize - 2 * pad) + pad) / (float)imageSize;
-					labelArray[i, 3] = float.Parse(labels[3]) * (imageSize - 2 * pad) / (float)imageSize;
+					labelArray[i, 1] = (float.Parse(labels[1]) * (imageSize - 2 * pad) + pad) / imageSize;
+					labelArray[i, 3] = float.Parse(labels[3]) * (imageSize - 2 * pad) / imageSize;
 
 					labelArray[i, 2] = float.Parse(labels[2]);
 					labelArray[i, 4] = float.Parse(labels[4]);
 				}
 
 			}
-			Tensor labelTensor = torch.tensor(labelArray);
+			Tensor labelTensor = tensor(labelArray);
 			return labelTensor;
 
 		}
@@ -172,12 +172,12 @@ namespace Yolov5
 		public (Tensor, Tensor) load_mosaic(long index)
 		{
 			int[] mosaic_border = [-320, -320];
-			Int64[] indexs = Sample(index, 0, (int)Count, 4);
+			long[] indexs = Sample(index, 0, (int)Count, 4);
 			Random random = new Random();
 			int xc = random.Next(-mosaic_border[0], 2 * imageSize + mosaic_border[0]);
 			int yc = random.Next(-mosaic_border[1], 2 * imageSize + mosaic_border[1]);
 
-			var img4 = torch.full([3, imageSize * 2, imageSize * 2], 114, ScalarType.Byte, device); // base image with 4 tiles
+			var img4 = full([3, imageSize * 2, imageSize * 2], 114, ScalarType.Byte, device); // base image with 4 tiles
 			List<Tensor> label4 = new List<Tensor>();
 			for (int i = 0; i < 4; i++)
 			{
@@ -215,7 +215,7 @@ namespace Yolov5
 				labels[TensorIndex.Ellipsis, 1..5] = xywhn2xyxy(labels[TensorIndex.Ellipsis, 1..5], w, h, padw, padh);
 				label4.Add(labels);
 			}
-			var labels4 = torch.concat(label4, 0);
+			var labels4 = concat(label4, 0);
 
 			labels4[TensorIndex.Ellipsis, 1..5] = labels4[TensorIndex.Ellipsis, 1..5].clip(0, 2 * imageSize);
 
@@ -246,10 +246,10 @@ namespace Yolov5
 			return ResizeImage(image, targetSize, targetSize);
 		}
 
-		private Int64[] Sample(long orgIndex, int min, int max, int count)
+		private long[] Sample(long orgIndex, int min, int max, int count)
 		{
 			Random random = new Random();
-			List<Int64> list = new List<long>();
+			List<long> list = new List<long>();
 			while (list.Count < count - 1)
 			{
 				int number = random.Next(min, max);
@@ -290,8 +290,8 @@ namespace Yolov5
 				x = clip_boxes(x, [h - eps, w - eps]);
 			}
 			var y = x.clone();
-			y[TensorIndex.Ellipsis, 0] = ((x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2]) / 2) / w;  // x center
-			y[TensorIndex.Ellipsis, 1] = ((x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3]) / 2) / h;// y center
+			y[TensorIndex.Ellipsis, 0] = (x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2]) / 2 / w;  // x center
+			y[TensorIndex.Ellipsis, 1] = (x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3]) / 2 / h;// y center
 			y[TensorIndex.Ellipsis, 2] = (x[TensorIndex.Ellipsis, 2] - x[TensorIndex.Ellipsis, 0]) / w;  // width
 			y[TensorIndex.Ellipsis, 3] = (x[TensorIndex.Ellipsis, 3] - x[TensorIndex.Ellipsis, 1]) / h;  // height
 			return y;
@@ -323,7 +323,7 @@ namespace Yolov5
 					labelArray[i, j] = float.Parse(labels[j]);
 				}
 			}
-			Tensor labelTensor = torch.tensor(labelArray);
+			Tensor labelTensor = tensor(labelArray);
 			return labelTensor;
 		}
 
@@ -334,35 +334,35 @@ namespace Yolov5
 			int width = (int)im.shape[2] + borderX * 2;
 
 			// Center
-			Tensor C = torch.eye(3).to(device);
+			Tensor C = eye(3).to(device);
 			C[0, 2] = -im.shape[2] / 2; // x translation (pixels)
 			C[1, 2] = -im.shape[1] / 2; // y translation (pixels)
 
 			//Perspective
-			Tensor P = torch.eye(3).to(device);
-			P[2, 0] = torch.rand(1).ToSingle() * 2 * perspective - perspective;   // x perspective (about y)
-			P[2, 1] = torch.rand(1).ToSingle() * 2 * perspective - perspective;   // y perspective (about x)
+			Tensor P = eye(3).to(device);
+			P[2, 0] = rand(1).ToSingle() * 2 * perspective - perspective;   // x perspective (about y)
+			P[2, 1] = rand(1).ToSingle() * 2 * perspective - perspective;   // y perspective (about x)
 
 			// Rotation and Scale
-			float a = torch.rand(1).ToSingle() * 2 * degrees - degrees;
-			float s = 1 + scale - torch.rand(1).ToSingle() * 2 * scale;
+			float a = rand(1).ToSingle() * 2 * degrees - degrees;
+			float s = 1 + scale - rand(1).ToSingle() * 2 * scale;
 
 			Tensor R = GetRotationMatrix2D(angle: a, scale: s).to(device);
 
 			// Shear
-			Tensor S = torch.eye(3).to(device);
-			S[0, 1] = Math.Tan((torch.rand(1).ToSingle() * 2 * shear - shear) * Math.PI / 180); // x shear (deg)
-			S[1, 0] = Math.Tan((torch.rand(1).ToSingle() * 2 * shear - shear) * Math.PI / 180); // y shear (deg)
+			Tensor S = eye(3).to(device);
+			S[0, 1] = Math.Tan((rand(1).ToSingle() * 2 * shear - shear) * Math.PI / 180); // x shear (deg)
+			S[1, 0] = Math.Tan((rand(1).ToSingle() * 2 * shear - shear) * Math.PI / 180); // y shear (deg)
 
 			// Translation
-			Tensor T = torch.eye(3).to(device);
-			T[0, 2] = (0.5f + translate - torch.rand(1).ToSingle() * 2 * translate) * width;    // x translation(pixels)
-			T[1, 2] = (0.5f + translate - torch.rand(1).ToSingle() * 2 * translate) * height;   // y translation(pixels)
+			Tensor T = eye(3).to(device);
+			T[0, 2] = (0.5f + translate - rand(1).ToSingle() * 2 * translate) * width;    // x translation(pixels)
+			T[1, 2] = (0.5f + translate - rand(1).ToSingle() * 2 * translate) * height;   // y translation(pixels)
 
 			var M = T.mm(S).mm(R).mm(P).mm(C);
 
-			Tensor outTensor = torch.zeros([imageSize, imageSize, 3], ScalarType.Byte).to(device);
-			if (borderX != 0 || borderY != 0 || M.bytes != torch.eye(3).bytes)
+			Tensor outTensor = zeros([imageSize, imageSize, 3], ScalarType.Byte).to(device);
+			if (borderX != 0 || borderY != 0 || M.bytes != eye(3).bytes)
 			{
 				if (perspective != 0)
 				{
@@ -382,17 +382,17 @@ namespace Yolov5
 			long n = targets.shape[0];
 			if (n > 0)
 			{
-				Tensor newT = torch.zeros([n, 4]).to(device);
-				Tensor xy = torch.ones([n * 4, 3]).to(device);
-				xy[TensorIndex.Ellipsis, 0..2] = targets.index_select(1, torch.tensor(new long[] { 1, 2, 3, 4, 1, 4, 3, 2 }).to(device)).reshape(n * 4, 2).to(device);  // x1y1, x2y2, x1y2, x2y1
+				Tensor newT = zeros([n, 4]).to(device);
+				Tensor xy = ones([n * 4, 3]).to(device);
+				xy[TensorIndex.Ellipsis, 0..2] = targets.index_select(1, tensor(new long[] { 1, 2, 3, 4, 1, 4, 3, 2 }).to(device)).reshape(n * 4, 2).to(device);  // x1y1, x2y2, x1y2, x2y1
 				xy = xy.mm(M.T);
-				xy = perspective == 0 ? xy[TensorIndex.Ellipsis, 0..2].reshape(n, 8) : (xy[TensorIndex.Ellipsis, 0..2] / xy[TensorIndex.Ellipsis, 2..3]);
-				Tensor x = xy.index_select(1, torch.tensor(new long[] { 0, 2, 4, 6 }).to(device));
-				Tensor y = xy.index_select(1, torch.tensor(new long[] { 1, 3, 5, 7 }).to(device));
-				newT = torch.concatenate([x.min(1).values, y.min(1).values, x.max(1).values, y.max(1).values]).reshape(4, n).T;
+				xy = perspective == 0 ? xy[TensorIndex.Ellipsis, 0..2].reshape(n, 8) : xy[TensorIndex.Ellipsis, 0..2] / xy[TensorIndex.Ellipsis, 2..3];
+				Tensor x = xy.index_select(1, tensor(new long[] { 0, 2, 4, 6 }).to(device));
+				Tensor y = xy.index_select(1, tensor(new long[] { 1, 3, 5, 7 }).to(device));
+				newT = concatenate([x.min(1).values, y.min(1).values, x.max(1).values, y.max(1).values]).reshape(4, n).T;
 
-				newT = newT.index_put_(newT.index_select(1, torch.tensor(new long[] { 0, 2 }).to(device)).clip(0, imageSize), new TensorIndex[] { TensorIndex.Ellipsis, TensorIndex.Slice(0, 3, 2) });
-				newT = newT.index_put_(newT.index_select(1, torch.tensor(new long[] { 1, 3 }).to(device)).clip(0, imageSize), new TensorIndex[] { TensorIndex.Ellipsis, TensorIndex.Slice(1, 4, 2) });
+				newT = newT.index_put_(newT.index_select(1, tensor(new long[] { 0, 2 }).to(device)).clip(0, imageSize), new TensorIndex[] { TensorIndex.Ellipsis, TensorIndex.Slice(0, 3, 2) });
+				newT = newT.index_put_(newT.index_select(1, tensor(new long[] { 1, 3 }).to(device)).clip(0, imageSize), new TensorIndex[] { TensorIndex.Ellipsis, TensorIndex.Slice(1, 4, 2) });
 
 				Tensor idx = box_candidates(box1: targets[TensorIndex.Ellipsis, 1..5].T * s, box2: newT.T, area_thr: 0.1f);
 				targets = targets[idx];
@@ -402,7 +402,7 @@ namespace Yolov5
 			return (outTensor.contiguous(), targets);
 		}
 
-		public static torch.Tensor GetRotationMatrix2D(float angle, float scale)
+		public static Tensor GetRotationMatrix2D(float angle, float scale)
 		{
 			// 将角度转换为弧度
 			float theta = angle * (float)Math.PI / 180.0f;
@@ -412,7 +412,7 @@ namespace Yolov5
 			float sinTheta = (float)Math.Sin(theta);
 
 			// 创建旋转矩阵
-			var R = torch.tensor(new float[,]
+			var R = tensor(new float[,]
 			{
 				{ scale * cosTheta, -scale * sinTheta, 0 },
 				{ scale * sinTheta, scale * cosTheta, 0 },
@@ -431,8 +431,8 @@ namespace Yolov5
 
 			var (w1, h1) = (box1[2] - box1[0], box1[3] - box1[1]);
 			var (w2, h2) = (box2[2] - box2[0], box2[3] - box2[1]);
-			var ar = torch.maximum(w2 / (h2 + eps), h2 / (w2 + eps)); // aspect ratio
-			return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + eps) > area_thr) & (ar < ar_thr); // candidates
+			var ar = maximum(w2 / (h2 + eps), h2 / (w2 + eps)); // aspect ratio
+			return w2 > wh_thr & h2 > wh_thr & w2 * h2 / (w1 * h1 + eps) > area_thr & ar < ar_thr; // candidates
 		}
 
 	}

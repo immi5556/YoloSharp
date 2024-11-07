@@ -3,7 +3,7 @@ using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
-namespace Yolov5
+namespace YoloSharp
 {
 	public class Loss
 	{
@@ -24,17 +24,17 @@ namespace Yolov5
 			float alpha;
 			public BCEBlurWithLogitsLoss(float alpha = 0.05f, Reduction reduction = Reduction.None) : base("BCEBlurWithLogitsLoss")
 			{
-				this.loss_fcn = BCEWithLogitsLoss(reduction: reduction);  // must be nn.BCEWithLogitsLoss()
+				loss_fcn = BCEWithLogitsLoss(reduction: reduction);  // must be nn.BCEWithLogitsLoss()
 				this.alpha = alpha;
 			}
 
 			public override Tensor forward(Tensor pred, Tensor t)
 			{
 				var loss = loss_fcn.forward(pred, t);
-				pred = torch.sigmoid(pred);  // prob from logits
+				pred = sigmoid(pred);  // prob from logits
 				var dx = pred - t;// ;  // reduce only missing label effects
 								  // dx = (pred - true).abs()  ;  // reduce missing label and false label effects
-				var alpha_factor = 1 - torch.exp((dx - 1) / (alpha + 1e-4));
+				var alpha_factor = 1 - exp((dx - 1) / (alpha + 1e-4));
 				loss *= alpha_factor;
 				return loss.mean();
 			}
@@ -51,22 +51,22 @@ namespace Yolov5
 				this.loss_fcn = loss_fcn;  // must be nn.BCEWithLogitsLoss()
 				this.gamma = gamma;
 				this.alpha = alpha;
-				this.reduction = loss_fcn.reduction;
+				reduction = loss_fcn.reduction;
 			}
 
 			public override Tensor forward(Tensor pred, Tensor t)
 			{
-				Tensor loss = this.loss_fcn.forward(pred, t);
-				var pred_prob = torch.sigmoid(pred);  // prob from logits
+				Tensor loss = loss_fcn.forward(pred, t);
+				var pred_prob = sigmoid(pred);  // prob from logits
 				var p_t = true * pred_prob + (1 - t) * (1 - pred_prob);
 
-				var alpha_factor = t * this.alpha + (1 - t) * (1 - this.alpha);
+				var alpha_factor = t * alpha + (1 - t) * (1 - alpha);
 
-				var modulating_factor = (1.0 - p_t).pow(this.gamma);
+				var modulating_factor = (1.0 - p_t).pow(gamma);
 
 				loss *= alpha_factor * modulating_factor;
 
-				switch (this.reduction)
+				switch (reduction)
 				{
 					case Reduction.Mean: return loss.mean();
 					case Reduction.Sum: return loss.sum();
@@ -116,33 +116,33 @@ namespace Yolov5
 						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],
 						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];
 
-				(this.cp, this.cn) = Smooth_BCE(h_label_smoothing);
-				this.balance = model_nl == 3 ? [4.0f, 1.0f, 0.4f] : [4.0f, 1.0f, 0.25f, 0.06f, 0.02f];
-				this.ssi = autobalance ? model_stride.ToList().IndexOf(16) : 0;
-				this.gr = 1.0f;
+				(cp, cn) = Smooth_BCE(h_label_smoothing);
+				balance = model_nl == 3 ? [4.0f, 1.0f, 0.4f] : [4.0f, 1.0f, 0.25f, 0.06f, 0.02f];
+				ssi = autobalance ? model_stride.ToList().IndexOf(16) : 0;
+				gr = 1.0f;
 				this.autobalance = autobalance;
 
-				this.nl = anchors.Length;
-				this.na = anchors[0].Length / 2; // =3 获得每个grid的anchor数量
+				nl = anchors.Length;
+				na = anchors[0].Length / 2; // =3 获得每个grid的anchor数量
 				this.nc = nc; // number of classes
 				this.anchors = anchors;
 			}
 
 			public override (Tensor, Tensor) forward(Tensor[] preds, Tensor targets)
 			{
-				this.device = targets.device;
-				var BCEcls = BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_cls_pw }, device: this.device));
-				var BCEobj = BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_obj_pw }, device: this.device));
+				device = targets.device;
+				var BCEcls = BCEWithLogitsLoss(pos_weights: tensor(new float[] { h_cls_pw }, device: device));
+				var BCEobj = BCEWithLogitsLoss(pos_weights: tensor(new float[] { h_obj_pw }, device: device));
 
 				//var BCEcls = new FocalLoss(BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_cls_pw }, device: this.device)), fl_gamma);
 				//var BCEobj = new FocalLoss(BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_obj_pw }, device: this.device)), fl_gamma);
 
-				var lcls = torch.zeros(1, device: this.device);  // class loss
-				var lbox = torch.zeros(1, device: this.device);  // box loss
-				var lobj = torch.zeros(1, device: this.device);  // object loss
+				var lcls = zeros(1, device: device);  // class loss
+				var lbox = zeros(1, device: device);  // box loss
+				var lobj = zeros(1, device: device);  // object loss
 
 				var (tcls, tbox, indices, anchors) = build_targets(preds, targets);
-				Tensor tobj = torch.zeros(0);
+				Tensor tobj = zeros(0);
 				for (int i = 0; i < preds.Length; i++)
 				{
 					var pi = preds[i].clone();
@@ -150,60 +150,60 @@ namespace Yolov5
 					var a = indices[i][1];
 					var gj = indices[i][2];
 					var gi = indices[i][3];
-					tobj = torch.zeros(preds[i].shape.Take(4).ToArray(), device: this.device);  // targets obj
+					tobj = zeros(preds[i].shape.Take(4).ToArray(), device: device);  // targets obj
 					long n = b.shape[0];
 					if (n > 0)
 					{
-						var temp = pi[b, a, gj, gi].split([2, 2, 1, this.nc], 1);
+						var temp = pi[b, a, gj, gi].split([2, 2, 1, nc], 1);
 						var pxy = temp[0];
 						var pwh = temp[1];
 						var pcls = temp[3];
 
 						pxy = pxy.sigmoid() * 2 - 0.5f;
 						pwh = (pwh.sigmoid() * 2).pow(2) * anchors[i];
-						var pbox = torch.cat([pxy, pwh], 1);  // predicted box
+						var pbox = cat([pxy, pwh], 1);  // predicted box
 						var iou = bbox_iou(pbox, tbox[i], CIoU: true).squeeze();  // iou(prediction, targets)
 						lbox += (1.0f - iou).mean();  // iou loss
 
 						// Objectness
 						iou = iou.detach().clamp(0).type(tobj.dtype);
 
-						if (this.sort_obj_iou)
+						if (sort_obj_iou)
 						{
 							var j = iou.argsort();
 							(b, a, gj, gi, iou) = (b[j], a[j], gj[j], gi[j], iou[j]);
 						}
-						if (this.gr < 1)
+						if (gr < 1)
 						{
-							iou = (1.0f - this.gr) + this.gr * iou;
+							iou = 1.0f - gr + gr * iou;
 						}
 
 						tobj[b, a, gj, gi] = iou;   // iou ratio
 
 						// Classification
-						if (this.nc > 1)  // cls loss (only if multiple classes)
+						if (nc > 1)  // cls loss (only if multiple classes)
 						{
-							var tt = torch.full_like(pcls, this.cn, device: this.device);  // targets
-							tt[torch.arange(n), tcls[i]] = this.cp;
+							var tt = full_like(pcls, cn, device: device);  // targets
+							tt[arange(n), tcls[i]] = cp;
 							lcls += BCEcls.forward(pcls, tt);  // BCE
 						}
 
 					}
 
 					var obji = BCEobj.forward(pi[TensorIndex.Ellipsis, 4], tobj);
-					lobj += obji * this.balance[i];  // obj loss
-					if (this.autobalance)
+					lobj += obji * balance[i];  // obj loss
+					if (autobalance)
 					{
-						this.balance[i] = this.balance[i] * 0.9999f + 0.0001f / obji.detach().item<float>();
+						balance[i] = balance[i] * 0.9999f + 0.0001f / obji.detach().item<float>();
 					}
 
 
 				}
-				if (this.autobalance)
+				if (autobalance)
 				{
-					for (int i = 0; i < this.balance.Length; i++)
+					for (int i = 0; i < balance.Length; i++)
 					{
-						balance[i] = this.balance[i] / this.balance[this.ssi];
+						balance[i] = balance[i] / balance[ssi];
 					}
 				}
 
@@ -216,7 +216,7 @@ namespace Yolov5
 				long bs = tobj.shape[0];  // batch size
 
 
-				return ((lbox + lobj + lcls) * bs, torch.cat([lbox, lobj, lcls]).detach());
+				return ((lbox + lobj + lcls) * bs, cat([lbox, lobj, lcls]).detach());
 			}
 
 			//已经检查OK
@@ -229,44 +229,44 @@ namespace Yolov5
 				int na = this.na;
 				int nt = (int)targets.shape[0];  // number of anchors, targets
 												 //tcls, tbox, indices, anch = [], [], [], []
-				var gain = torch.ones(7, device: this.device);// normalized to gridspace gain
-				var ai = torch.arange(na, device: this.device).@float().view(na, 1).repeat(1, nt);  // same as .repeat_interleave(nt)
-				targets = torch.cat([targets.repeat(na, 1, 1), ai.unsqueeze(-1)], 2);// append anchor indices
+				var gain = ones(7, device: device);// normalized to gridspace gain
+				var ai = arange(na, device: device).@float().view(na, 1).repeat(1, nt);  // same as .repeat_interleave(nt)
+				targets = cat([targets.repeat(na, 1, 1), ai.unsqueeze(-1)], 2);// append anchor indices
 
 
 				float g = 0.5f;  // bias
-				var off = torch.tensor(new int[,] { { 0, 0 }, { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } }, device: this.device) * g;
-				for (int i = 0; i < this.nl; i++)
+				var off = tensor(new int[,] { { 0, 0 }, { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } }, device: device) * g;
+				for (int i = 0; i < nl; i++)
 				{
 					Tensor anchors = this.anchors[i];
-					anchors = anchors.view(3, 2).to(this.device);
+					anchors = anchors.view(3, 2).to(device);
 					var shape = p[i].shape;
-					var temp = torch.tensor(new float[] { shape[3], shape[2], shape[3], shape[2] }, device: this.device);
+					var temp = tensor(new float[] { shape[3], shape[2], shape[3], shape[2] }, device: device);
 
 					gain.index_put_(temp, new long[] { 2, 3, 4, 5 });
 					var t = targets * gain;
-					Tensor offsets = torch.zeros(0, device: this.device);
+					Tensor offsets = zeros(0, device: device);
 					if (nt != 0)
 					{
 						var r = t[TensorIndex.Ellipsis, TensorIndex.Slice(4, 6)] / anchors.unsqueeze(1);
-						var j = torch.max(r, 1 / r).max(2).values < anchor_t;  // compare
+						var j = max(r, 1 / r).max(2).values < anchor_t;  // compare
 						t = t[j];  //filter
 						var gxy = t[TensorIndex.Ellipsis, TensorIndex.Slice(2, 4)];   // grid xy
 						var gxi = gain[TensorIndex.Ellipsis, TensorIndex.Slice(2, 4)] - gxy; // inverse
-						Tensor jk = ((gxy % 1 < g) & (gxy > 1)).T;
+						Tensor jk = (gxy % 1 < g & gxy > 1).T;
 						j = jk[0];
 						var k = jk[1];
-						Tensor lm = ((gxi % 1 < g) & (gxi > 1)).T;
+						Tensor lm = (gxi % 1 < g & gxi > 1).T;
 						var l = lm[0];
 						var m = lm[1];
-						j = torch.stack([torch.ones_like(j), j, k, l, m]);
+						j = stack([ones_like(j), j, k, l, m]);
 						t = t.repeat([5, 1, 1])[j];
-						offsets = (torch.zeros_like(gxy).unsqueeze(0) + off.unsqueeze(1))[j];
+						offsets = (zeros_like(gxy).unsqueeze(0) + off.unsqueeze(1))[j];
 					}
 					else
 					{
 						t = targets[0];
-						offsets = torch.zeros(1);
+						offsets = zeros(1);
 					}
 
 					Tensor[] ck = t.chunk(4, 1); // (image, class), grid xy, grid wh, anchors
@@ -285,7 +285,7 @@ namespace Yolov5
 					var gj = gij.T[1];
 
 					indices.Add(new List<Tensor> { b, a, gj.clamp_(0, shape[2] - 1), gi.clamp_(0, shape[3] - 1) });// image, anchor, grid
-					tbox.Add(torch.cat([gxy_ - gij, gwh], 1));  // box
+					tbox.Add(cat([gxy_ - gij, gwh], 1));  // box
 					anch.Add(anchors[a]); // anchors
 					tcls.Add(c);// class
 				}
@@ -356,8 +356,8 @@ namespace Yolov5
 
 						if (CIoU)  // https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
 						{
-							var v = (4 / (MathF.PI * MathF.PI)) * (torch.atan(w2 / h2) - torch.atan(w1 / h1)).pow(2);
-							using (torch.no_grad())
+							var v = 4 / (MathF.PI * MathF.PI) * (atan(w2 / h2) - atan(w1 / h1)).pow(2);
+							using (no_grad())
 							{
 								var alpha = v / (v - iou + (1 + eps));
 								return iou - (rho2 / c2 + v * alpha);  //CIoU

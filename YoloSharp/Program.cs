@@ -5,31 +5,32 @@ using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 
-namespace Yolov5
+namespace YoloSharp
 {
 	internal class Program
 	{
 		private static string dataPath = @"..\..\..\Assets\coco128";
-		private static int sortCount = 80;
-		private static int epochs = 3000;
+		private static int sortCount = 2;
+		private static int epochs = 300000;
 		private static float lr = 0.01f;
 		private static int imageSize = 640;
-		private static Device device = torch.CUDA;
+		private static Device device = CUDA;
+		private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n).to(device);
 
 		static void Main(string[] args)
 		{
 			Train();
-			Predict();
+			//Predict();
 		}
 
 		private static void Train()
 		{
-			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
-			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
-			Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount).to(device);
+			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: false);
+			DataLoader loader = new DataLoader(yoloDataset, 4, num_worker: 32, shuffle: true, device: device);
 			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).to(device);
 
-			var optimizer = optim.SGD(yolo.parameters(), learningRate: lr, weight_decay: 0.0005);
+			yolo.train();
+			var optimizer = optim.SGD(yolo.Parameters(), learningRate: lr, weight_decay: 0.0005);
 
 			float tempLoss = float.MaxValue;
 
@@ -46,11 +47,11 @@ namespace Yolov5
 					{
 						var (img, lb) = yoloDataset.GetDataTensor(indexs[i]);
 						images[i] = img.to(device);
-						labels[i] = torch.full(new long[] { lb.shape[0], lb.shape[1] + 1 }, i, ScalarType.Float32,device:lb.device);
+						labels[i] = full(new long[] { lb.shape[0], lb.shape[1] + 1 }, i, ScalarType.Float32, device: lb.device);
 						labels[i].slice(1, 1, lb.shape[1] + 1, 1).copy_(lb);
 					}
-					Tensor imageTensor = torch.concat(images);
-					Tensor labelTensor = torch.concat(labels);
+					Tensor imageTensor = concat(images);
+					Tensor labelTensor = concat(labels);
 
 					if (labelTensor.shape[0] == 0)
 					{
@@ -71,23 +72,23 @@ namespace Yolov5
 						{
 							Directory.CreateDirectory("result");
 						}
-						yolo.save(Path.Combine("result", "best.bin"));
+						yolo.Save(Path.Combine("result", "best.bin"));
 						tempLoss = ls.ToSingle();
 					}
-					yolo.save(Path.Combine("result", "last.bin"));
+					yolo.Save(Path.Combine("result", "last.bin"));
 				}
 			}
 			if (!Directory.Exists("result"))
 			{
 				Directory.CreateDirectory("result");
 			}
-			yolo.save(Path.Combine("result", "yolo_last.bin"));
+			yolo.Save(Path.Combine("result", "yolo_last.bin"));
 		}
 
 		private static void Predict()
 		{
-			int predictIndex = 0;
-			float PredictThreshold = 0.5f;
+			int predictIndex = 5;
+			float PredictThreshold = 0.4f;
 			float ObjectThreshold = 0.5f;
 			float NmsThreshold = 0.4f;
 			double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
@@ -96,7 +97,6 @@ namespace Yolov5
 
 			YoloDataset yoloDataset = new YoloDataset(dataPath, useMosaic: false);
 			Tensor input = yoloDataset.GetDataTensor(predictIndex).Item1;
-			Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount).cuda();
 			yolo.load("result/last.bin");
 			yolo.eval();
 			Tensor[] tensors = yolo.forward(input.cuda());
@@ -105,7 +105,7 @@ namespace Yolov5
 			Tensor predScores = resultTensor[TensorIndex.Ellipsis, TensorIndex.Slice(4, 5)];
 			var preds = predScores > PredictThreshold;
 
-			var indices = torch.nonzero(preds)[TensorIndex.Ellipsis, TensorIndex.Slice(0, 1)].squeeze(-1);
+			var indices = nonzero(preds)[TensorIndex.Ellipsis, TensorIndex.Slice(0, 1)].squeeze(-1);
 			var rResult = resultTensor[indices];
 			if (rResult.shape[0] > 0)
 			{
@@ -130,8 +130,8 @@ namespace Yolov5
 				results = NMS(results, NmsThreshold);
 			}
 
-			Tensor mean = torch.tensor(means).view(3, 1, 1);
-			Tensor std = torch.tensor(stdevs).view(3, 1, 1);
+			Tensor mean = tensor(means).view(3, 1, 1);
+			Tensor std = tensor(stdevs).view(3, 1, 1);
 			Tensor orgImg = ((input.cpu().squeeze(0) * std + mean) * 255.0f).@byte();
 
 			//Tensor orgImg = (input.squeeze(0) * 255.0f).@byte().cpu();
@@ -182,9 +182,9 @@ namespace Yolov5
 			{
 				for (int w = 0; w < width; w++)
 				{
-					bytes[h * width * 3 + w * 3 + 0] = tensorBytes[2 * (height * width) + width * h + w];
-					bytes[h * width * 3 + w * 3 + 1] = tensorBytes[1 * (height * width) + width * h + w];
-					bytes[h * width * 3 + w * 3 + 2] = tensorBytes[0 * (height * width) + width * h + w];
+					bytes[h * width * 3 + w * 3 + 0] = tensorBytes[2 * height * width + width * h + w];
+					bytes[h * width * 3 + w * 3 + 1] = tensorBytes[1 * height * width + width * h + w];
+					bytes[h * width * 3 + w * 3 + 2] = tensorBytes[0 * height * width + width * h + w];
 
 				}
 			}
@@ -238,9 +238,9 @@ namespace Yolov5
 					scores[i] = list[i].score;
 				}
 
-				Tensor boxes = torch.tensor(data);
+				Tensor boxes = tensor(data);
 				boxes = boxes.view([list.Count, 4]);
-				Tensor scr = torch.tensor(scores);
+				Tensor scr = tensor(scores);
 				Tensor r = torchvision.ops.nms(boxes, scr, threshold);
 				long[] nmsIndexs = r.data<long>().ToArray();
 				foreach (long nms in nmsIndexs)
