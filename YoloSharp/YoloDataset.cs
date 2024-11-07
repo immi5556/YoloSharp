@@ -7,7 +7,7 @@ namespace YoloSharp
 	{
 		private static double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
 		private string rootPath = string.Empty;
-		private int imageSize = 0;
+		private int imageSize = 640;
 		private List<string> imageFiles = new List<string>();
 		private bool useMosaic = true;
 		private Device device = CUDA;

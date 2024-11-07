@@ -10,23 +10,24 @@ namespace YoloSharp
 	internal class Program
 	{
 		private static string dataPath = @"..\..\..\Assets\coco128";
-		private static int sortCount = 2;
+		private static int sortCount = 80;
 		private static int epochs = 300000;
 		private static float lr = 0.01f;
 		private static int imageSize = 640;
 		private static Device device = CUDA;
-		private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n).to(device);
+		private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.n).to(device);
+		//private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n).to(device);
 
 		static void Main(string[] args)
 		{
 			Train();
-			//Predict();
+			Predict();
 		}
 
 		private static void Train()
 		{
 			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: false);
-			DataLoader loader = new DataLoader(yoloDataset, 4, num_worker: 32, shuffle: true, device: device);
+			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
 			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).to(device);
 
 			yolo.train();
@@ -210,8 +211,6 @@ namespace YoloSharp
 			g.Save();
 			return bitmap;
 		}
-
-
 
 		private static List<Result> NMS(List<Result> orgResults, float threshold = 0.5f)
 		{
