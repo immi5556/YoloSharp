@@ -298,6 +298,143 @@ namespace YoloSharp
 			}
 		}
 
+		public class Yolov11 : Module<Tensor, Tensor[]>
+		{
+			private readonly Sequential backbone;
+			private readonly ModuleList<Module<Tensor, Tensor>> head;
+			private readonly Detect dect;
+
+			public Yolov11(int nc = 80, YoloSize yoloSize = YoloSize.n) : base("Yolov11")
+			{
+				float depth_multiple = 0.5f;
+				float width_multiple = 0.25f;
+
+				switch (yoloSize)
+				{
+					case YoloSize.n:
+						{
+							depth_multiple = 0.5f;
+							width_multiple = 0.25f;
+							break;
+						}
+					case YoloSize.s:
+						{
+							depth_multiple = 0.5f;
+							width_multiple = 0.5f;
+							break;
+						}
+					case YoloSize.m:
+						{
+							depth_multiple = 0.5f;
+							width_multiple = 1.0f;
+							break;
+						}
+					case YoloSize.l:
+						{
+							depth_multiple = 1.0f;
+							width_multiple = 1.0f;
+							break;
+						}
+					case YoloSize.x:
+						{
+							depth_multiple = 1.0f;
+							width_multiple = 1.5f;
+							break;
+						}
+				}
+
+				float p3_d = 8.0f;
+				float p4_d = 16.0f;
+				float p5_d = 32.0f;
+				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
+						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
+						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+
+				int[] ch = [(int)(256 * width_multiple), (int)(512 * width_multiple), (int)(1024 * width_multiple)];
+
+
+				backbone = Sequential(
+					new Conv(3, (int)(64 * width_multiple), 3, 2),       // 0-P1/2
+
+					new Conv((int)(64 * width_multiple), (int)(128 * width_multiple), 3, 2),        // 0-P2/4
+					new C3k2((int)(128 * width_multiple), (int)(256 * width_multiple), (int)(2 * depth_multiple), shortcut: true, e: 0.25f),
+
+					new Conv((int)(256 * width_multiple), (int)(256 * width_multiple), 3, 2),       //P3
+					new C3k2((int)(256 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple), shortcut: true, e: 0.25f),
+
+					new Conv((int)(512 * width_multiple), (int)(512 * width_multiple), 3, 2),       //P4
+					new C3k2((int)(512 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple), c3k: true, shortcut: true),
+
+					new Conv((int)(512 * width_multiple), (int)(1024 * width_multiple), 3, 2),      //P5
+					new C3k2((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(2 * depth_multiple), c3k: true, shortcut: true),
+					new SPPF((int)(1024 * width_multiple), (int)(1024 * width_multiple), 5),
+					new C2PSA((int)(1024 * width_multiple), (int)(1024 * width_multiple))
+				);
+
+				head = new ModuleList<Module<Tensor, Tensor>>
+				{
+					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					new C3k2((int)(1536 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple),  shortcut: true),
+
+					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					new C3k2((int)(1024 * width_multiple), (int)(256 * width_multiple), (int)(2 * depth_multiple),  shortcut: true),
+
+					new Conv((int)(256 * width_multiple), (int)(256 * width_multiple), 3, 2),
+					new C3k2((int)(768 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple),  shortcut: true),
+
+					new Conv((int)(512 * width_multiple), (int)(512 * width_multiple), 3, 2),
+					new C3k2((int)(1536 * width_multiple), (int)(1024 * width_multiple), (int)(2 * depth_multiple), c3k:true, shortcut: true),
+				};
+
+				dect = new Detect(nc, ch, ach);
+
+				RegisterComponents();
+			}
+
+			public override Tensor[] forward(Tensor x)
+			{
+				List<Tensor> outputs = new List<Tensor>();
+				for (int i = 0; i < backbone.Count; i++)
+				{
+					var md = ((Module<Tensor, Tensor>)backbone[i]);
+					x = md.forward(x);
+					if (i == 4 || i == 6 || i == 10)
+					{
+						outputs.Add(x);
+					}
+				}
+
+				x = head[0].forward(x);
+				x = cat([x, outputs[1]], dim: 1);
+				Tensor p13 = head[1].forward(x);
+
+				x = head[2].forward(p13);
+				x = cat([x, outputs[0]], dim: 1);
+				Tensor p16 = head[3].forward(x);
+
+				x = head[4].forward(p16);
+				x = cat([x, p13], dim: 1);
+				Tensor p19 = head[5].forward(x);
+
+				x = head[6].forward(p19);
+				x = cat([x, outputs[2]], dim: 1);
+				Tensor p22 = head[7].forward(x);
+
+				var list = dect.forward([p16, p19, p22]);
+				return list;
+			}
+
+			public void Save(string path)
+			{
+				this.save(path);
+			}
+			public IEnumerable<Parameter> Parameters(bool recurse = true)
+			{
+				return this.parameters(recurse);
+			}
+
+
+		}
 
 	}
 }

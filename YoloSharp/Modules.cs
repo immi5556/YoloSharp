@@ -1,4 +1,5 @@
-﻿using TorchSharp.Modules;
+﻿using TorchSharp;
+using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
@@ -81,7 +82,7 @@ namespace YoloSharp
 			private readonly Conv cv1;
 			private readonly Conv cv2;
 			private readonly Conv cv3;
-			private readonly Sequential m = Sequential();
+			public Sequential m = Sequential();
 
 			public C3(int inChannels, int outChannels, int n = 1, bool shortcut = true, int groups = 1, float e = 0.5f) : base("C3")
 			{
@@ -103,11 +104,35 @@ namespace YoloSharp
 			}
 		}
 
+		public class C3k : Module<Tensor, Tensor>
+		{
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			private readonly Conv cv3;
+			public Sequential m = Sequential();
+			public C3k(int inChannels, int outChannels, int n = 1, bool shortcut = true, int groups = 1, float e = 0.5f) : base("C3k")
+			{
+				int c = (int)(outChannels * e);
+				cv1 = new Conv(inChannels, c, 1, 1);
+				cv2 = new Conv(inChannels, c, 1, 1);
+				cv3 = new Conv(2 * c, outChannels, 1);
+				for (int i = 0; i < n; i++)
+				{
+					this.m = this.m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, e: 1.0f));
+				}
+				RegisterComponents();
+			}
+			public override Tensor forward(Tensor input)
+			{
+				return cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
+			}
+		}
+
 		public class C2f : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
-			private readonly Sequential m = Sequential();
+			public Sequential m = Sequential();
 			public C2f(int inChannels, int outChannels, int n = 1, bool shortcut = false, int groups = 1, float e = 0.5f) : base("C2f")
 			{
 				int c = (int)(outChannels * e);
@@ -125,7 +150,43 @@ namespace YoloSharp
 				var y = this.cv1.forward(input).chunk(2, 1).ToList();
 				for (int i = 0; i < m.Count; i++)
 				{
-					 y.Add(m[i].call(y.Last()));
+					y.Add(m[i].call(y.Last()));
+				}
+				return cv2.forward(cat(y, 1));
+			}
+		}
+
+		public class C3k2 : Module<Tensor, Tensor>
+		{
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			public Sequential m = Sequential();
+			public C3k2(int inChannels, int outChannels, int n = 1, bool c3k = false, bool shortcut = false, int groups = 1, float e = 0.5f, int k = 3) : base("C3k2")
+			{
+				int c = (int)(outChannels * e);
+				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(c2)
+				for (int i = 0; i < n; i++)
+				{
+					if (c3k)
+					{
+						this.m = this.m.append(new C3k(c, c, 2, shortcut, groups, e));
+					}
+					else
+					{
+
+						this.m = this.m.append(new Bottleneck(c, c, (k, k), shortcut, groups, e));
+					}
+				}
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor input)
+			{
+				var y = this.cv1.forward(input).chunk(2, 1).ToList();
+				for (int i = 0; i < m.Count; i++)
+				{
+					y.Add(m[i].call(y.Last()));
 				}
 				return cv2.forward(cat(y, 1));
 			}
@@ -153,6 +214,116 @@ namespace YoloSharp
 				var y2 = m.forward(y1);
 
 				return cv2.forward(cat(new[] { x, y1, y2, m.forward(y2) }, 1));
+			}
+		}
+
+		public class C2PSA : Module<Tensor, Tensor>
+		{
+			private readonly int c;
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			private readonly Sequential m = Sequential();
+
+			public C2PSA(int inChannel, int outChannel, int n = 1, float e = 0.5f) : base("C2PSA")
+			{
+				if (inChannel != outChannel)
+				{
+					throw new ArgumentException("in channel not equals to out channel");
+				}
+				this.c = (int)(inChannel * e);
+				this.cv1 = new Conv(inChannel, 2 * c, 1, 1);
+				this.cv2 = new Conv(2 * c, outChannel, 1);
+
+				for (int i = 0; i < n; i++)
+				{
+					m = m.append(new PSABlock(c, attn_ratio: 0.5f, num_heads: c / 64));
+				}
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				Tensor[] ab = this.cv1.forward(x).split([this.c, this.c], dim: 1);
+				Tensor a = ab[0];
+				Tensor b = ab[1];
+				b = this.m.forward(b);
+				return this.cv2.forward(torch.cat([a, b], 1));
+			}
+		}
+
+		public class PSABlock : Module<Tensor, Tensor>
+		{
+			private readonly Attention attn;
+			private readonly Sequential ffn;
+			private readonly bool add;
+
+			public PSABlock(int c, float attn_ratio = 0.5f, int num_heads = 4, bool shortcut = true) : base("PSABlock")
+			{
+				this.attn = new Attention(c, attn_ratio: attn_ratio, num_heads: num_heads);
+				this.ffn = nn.Sequential(new Conv(c, c * 2, 1), new Conv(c * 2, c, 1, act: false));
+				this.add = shortcut;
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				x = this.add ? (x + this.attn.forward(x)) : this.attn.forward(x);
+				x = this.add ? (x + this.ffn.forward(x)) : this.ffn.forward(x);
+				return x;
+			}
+		}
+
+		public class Attention : Module<Tensor, Tensor>
+		{
+			private int num_heads;
+			private int head_dim;
+			private int key_dim;
+			private float scale;
+
+			private readonly Conv qkv;
+			private readonly Conv proj;
+			private readonly Conv pe;
+
+			public Attention(int dim, int num_heads = 8, float attn_ratio = 0.5f) : base("Attention")
+			{
+				this.num_heads = num_heads;
+				this.head_dim = dim / num_heads;
+				this.key_dim = (int)(this.head_dim * attn_ratio);
+				this.scale = (float)Math.Pow(key_dim, -0.5);
+
+				int nh_kd = this.key_dim * num_heads;
+				int h = dim + nh_kd * 2;
+
+				this.qkv = new Conv(dim, h, 1, act: false);
+				this.proj = new Conv(dim, dim, 1, act: false);
+				this.pe = new Conv(dim, dim, 3, 1, groups: dim, act: false);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				long B = x.shape[0];
+				long C = x.shape[1];
+				long H = x.shape[2];
+				long W = x.shape[3];
+
+				long N = H * W;
+
+				Tensor qkv = this.qkv.forward(x);
+
+				Tensor[] qkv_mix = qkv.view(B, this.num_heads, this.key_dim * 2 + this.head_dim, N).split(
+					[this.key_dim, this.key_dim, this.head_dim], dim: 2
+				);
+				Tensor q = qkv_mix[0];
+				Tensor k = qkv_mix[1];
+				Tensor v = qkv_mix[2];
+
+				Tensor attn = q.transpose(-2, -1).matmul(k) * this.scale;
+				attn = attn.softmax(dim: -1);
+				x = (v.matmul(attn.transpose(-2, -1))).view(B, C, H, W) + this.pe.forward(v.reshape(B, C, H, W));
+				x = this.proj.forward(x);
+				return x;
+
 			}
 		}
 

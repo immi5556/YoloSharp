@@ -359,7 +359,8 @@ namespace YoloSharp
 			T[0, 2] = (0.5f + translate - rand(1).ToSingle() * 2 * translate) * width;    // x translation(pixels)
 			T[1, 2] = (0.5f + translate - rand(1).ToSingle() * 2 * translate) * height;   // y translation(pixels)
 
-			var M = T.mm(S).mm(R).mm(P).mm(C);
+			//var M = T.mm(S).mm(R).mm(P).mm(C);
+			var M = T.matmul(S).matmul(R).matmul(P).matmul(C);
 
 			Tensor outTensor = zeros([imageSize, imageSize, 3], ScalarType.Byte).to(device);
 			if (borderX != 0 || borderY != 0 || M.bytes != eye(3).bytes)

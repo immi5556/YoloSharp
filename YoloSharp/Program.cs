@@ -15,8 +15,9 @@ namespace YoloSharp
 		private static float lr = 0.01f;
 		private static int imageSize = 640;
 		private static Device device = CUDA;
-		private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.n).to(device);
+		//private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.m).to(device);
 		//private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n).to(device);
+		private static Yolo.Yolov11 yolo = new Yolo.Yolov11(sortCount, Yolo.YoloSize.n).to(device);
 
 		static void Main(string[] args)
 		{
@@ -26,12 +27,12 @@ namespace YoloSharp
 
 		private static void Train()
 		{
-			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: false);
-			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
+			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
+			DataLoader loader = new DataLoader(yoloDataset, 8, num_worker: 32, shuffle: true, device: device);
 			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).to(device);
 
 			yolo.train();
-			var optimizer = optim.SGD(yolo.Parameters(), learningRate: lr, weight_decay: 0.0005);
+			var optimizer = optim.SGD(yolo.Parameters(), lr, weight_decay: 0.0005);
 
 			float tempLoss = float.MaxValue;
 
@@ -77,6 +78,7 @@ namespace YoloSharp
 						tempLoss = ls.ToSingle();
 					}
 					yolo.Save(Path.Combine("result", "last.bin"));
+					GC.Collect();
 				}
 			}
 			if (!Directory.Exists("result"))
@@ -88,10 +90,10 @@ namespace YoloSharp
 
 		private static void Predict()
 		{
-			int predictIndex = 5;
-			float PredictThreshold = 0.4f;
+			int predictIndex = 1;
+			float PredictThreshold = 0.5f;
 			float ObjectThreshold = 0.5f;
-			float NmsThreshold = 0.4f;
+			float NmsThreshold = 0.5f;
 			double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
 
 			List<Result> results = new List<Result>();
