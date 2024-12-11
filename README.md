@@ -12,6 +12,15 @@ With the help of this project you won't have to transform .pt model to onnx, and
 - Support LetterBox and Mosaic4 method for preprocessing images.
 - Support Load PreTrained models from ultralytics/yolov5 (converted)
 
+
+## Models
+
+You can download yolov5 pre-trained models here.
+
+| model | n| s | m | l | x |
+| --- | ----------- | ----------- | ----------- | ----------- | ----------- |
+| yolov5 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5x.bin) |
+
 For example:
 
 Use yolov5n pre-trained model to detect coco128
