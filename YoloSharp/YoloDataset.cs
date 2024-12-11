@@ -5,7 +5,6 @@ namespace YoloSharp
 {
 	internal class YoloDataset : utils.data.Dataset
 	{
-		private static double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
 		private string rootPath = string.Empty;
 		private int imageSize = 640;
 		private List<string> imageFiles = new List<string>();
@@ -87,8 +86,7 @@ namespace YoloSharp
 			{
 				image = image.unsqueeze(0);
 			}
-			image = torchvision.transforms.functional.normalize(image / 255.0f, means, stdevs);
-			//image = image / 255.0f;
+			image = image / 255.0f;
 			return (image, label);
 		}
 

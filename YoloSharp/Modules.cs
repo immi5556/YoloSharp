@@ -1,4 +1,5 @@
-﻿using TorchSharp;
+﻿using System.Numerics;
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -12,16 +13,18 @@ namespace YoloSharp
 			private readonly Conv2d conv;
 			private readonly BatchNorm2d bn;
 			private readonly bool act;
+			private double eps = 0.001;
+			private double momentum = 0.03;
 
-			public Conv(int in_channels, int out_channels, int kernel_size, int stride = 1, int? padding = null, int groups = 1, bool bias = true, bool act = true) : base("Conv")
+			public Conv(int in_channels, int out_channels, int kernel_size, int stride = 1, int? padding = null, int groups = 1, int d = 1, bool bias = false, bool act = true) : base("Conv")
 			{
 				if (padding == null)
 				{
 					padding = (kernel_size) / 2;
 				}
 
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value, groups: groups, bias: bias);
-				bn = BatchNorm2d(out_channels);
+				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value, groups: groups, bias: bias, dilation: d);
+				bn = BatchNorm2d(out_channels, eps: eps, momentum: momentum);
 				this.act = act;
 				RegisterComponents();
 			}
@@ -33,7 +36,30 @@ namespace YoloSharp
 					padding = (kernel_size.Item1 / 2, kernel_size.Item2 / 2);
 				}
 
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value);
+				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value, bias: bias);
+				bn = BatchNorm2d(out_channels, eps: eps, momentum: momentum);
+				this.act = act;
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor input)
+			{
+				Module<Tensor, Tensor> ac = act ? SiLU(inplace: true) : Identity();
+				return ac.forward(bn.forward(conv.forward(input)));
+			}
+		}
+
+		public class DWConv : Module<Tensor, Tensor>
+		{
+			private readonly Conv2d conv;
+			private readonly BatchNorm2d bn;
+			private readonly bool act;
+
+			public DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true) : base("DWConv")
+			{
+				int groups = (int)BigInteger.GreatestCommonDivisor(in_channels, out_channels);
+				int padding = (kernel_size) / 2;
+				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups: groups, dilation: d);
 				bn = BatchNorm2d(out_channels);
 				this.act = act;
 				RegisterComponents();
@@ -93,7 +119,7 @@ namespace YoloSharp
 
 				for (int i = 0; i < n; i++)
 				{
-					m = m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, e: 1.0f));
+					m = m.append(new Bottleneck(c, c, (1, 3), shortcut, groups, e: 1.0f));
 				}
 				RegisterComponents();
 			}
@@ -137,7 +163,7 @@ namespace YoloSharp
 			{
 				int c = (int)(outChannels * e);
 				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
-				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(c2)
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
 				for (int i = 0; i < n; i++)
 				{
 					m = m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, e));
@@ -165,7 +191,7 @@ namespace YoloSharp
 			{
 				int c = (int)(outChannels * e);
 				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
-				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(c2)
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
 				for (int i = 0; i < n; i++)
 				{
 					if (c3k)
@@ -203,7 +229,7 @@ namespace YoloSharp
 				int c = inChannels / 2;
 				cv1 = new Conv(inChannels, c, 1, 1);
 				cv2 = new Conv(c * 4, outChannels, 1, 1);
-				m = MaxPool2d(kernelSize: kernalSize, stride: 1, padding: kernalSize / 2);
+				m = MaxPool2d(kernalSize, stride: 1, padding: kernalSize / 2);
 				RegisterComponents();
 			}
 
@@ -212,7 +238,6 @@ namespace YoloSharp
 				var x = cv1.forward(input);
 				var y1 = m.forward(x);
 				var y2 = m.forward(y1);
-
 				return cv2.forward(cat(new[] { x, y1, y2, m.forward(y2) }, 1));
 			}
 		}
@@ -327,46 +352,161 @@ namespace YoloSharp
 			}
 		}
 
-		public class Detect : Module<Tensor[], Tensor[]>
+		public class SCDown : Module<Tensor, Tensor>
 		{
-			Tensor stride;  //strides computed during build
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			public SCDown(int inChannel, int outChannel, int k, int s) : base("SCDown")
+			{
+				this.cv1 = new Conv(inChannel, outChannel, 1, 1);
+				this.cv2 = new Conv(outChannel, outChannel, kernel_size: k, stride: s, groups: outChannel, act: false);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				return this.cv2.forward(this.cv1.forward(x));
+			}
+		}
+
+		public class C2fCIB : Module<Tensor, Tensor>
+		{
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			public Sequential m = Sequential();
+			public C2fCIB(int inChannels, int outChannels, int n = 1, bool shortcut = false, bool lk = false, int g = 1, float e = 0.5f) : base("C2fCIB")
+			{
+				int c = (int)(outChannels * e);
+				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
+				for (int i = 0; i < n; i++)
+				{
+					m = m.append(new CIB(c, c, shortcut, e: 1.0f, lk: lk));
+				}
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor input)
+			{
+				var y = this.cv1.forward(input).chunk(2, 1).ToList();
+				for (int i = 0; i < m.Count; i++)
+				{
+					y.Add(m[i].call(y.Last()));
+				}
+				return cv2.forward(cat(y, 1));
+			}
+		}
+
+		public class CIB : Module<Tensor, Tensor>
+		{
+			Sequential cv1;
+			bool add;
+			public CIB(int inChannels, int outChannels, bool shortcut = true, float e = 0.5f, bool lk = false) : base("CIB")
+			{
+				int c = (int)(outChannels * e);  // hidden channels
+				this.cv1 = nn.Sequential(
+					new Conv(inChannels, inChannels, 3, groups: inChannels),
+					new Conv(inChannels, 2 * c, 1),
+					lk ? new RepVGGDW(2 * c) : new Conv(2 * c, 2 * c, 3, groups: 2 * c),
+					new Conv(2 * c, outChannels, 1),
+					new Conv(outChannels, outChannels, 3, groups: outChannels));
+				this.add = shortcut && (inChannels == outChannels);
+
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				return this.add ? (x + this.cv1.forward(x)) : this.cv1.forward(x);
+			}
+		}
+
+		public class RepVGGDW : Module<Tensor, Tensor>
+		{
+			private readonly Conv conv;
+			private readonly Conv conv1;
+			private readonly int dim;
+			private readonly Module<Tensor, Tensor> act;
+			public RepVGGDW(int ed) : base("RepVGGDW")
+			{
+				this.conv = new Conv(ed, ed, 7, 1, 3, groups: ed, act: false);
+				this.conv1 = new Conv(ed, ed, 3, 1, 1, groups: ed, act: false);
+				this.dim = ed;
+				this.act = nn.SiLU();
+
+				RegisterComponents();
+			}
+			public override Tensor forward(Tensor x)
+			{
+				return this.act.forward(this.conv.forward(x) + this.conv1.forward(x));
+			}
+		}
+
+		public class DFL : Module<Tensor, Tensor>
+		{
+			private readonly Conv2d conv;
+			private readonly int c1;
+			public DFL(int c1 = 16) : base("DFL")
+			{
+				this.conv = nn.Conv2d(c1, 1, 1, bias: false);
+				Tensor x = torch.arange(c1, dtype: torch.float32);
+				this.conv.weight = nn.Parameter(x.view(1, c1, 1, 1));
+				this.c1 = c1;
+
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				long b = x.shape[0];  // batch, channels, anchors
+				long a = x.shape[2];
+				return this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a);
+			}
+		}
+
+		public class Concat : Module<Tensor[], Tensor>
+		{
+			private readonly int dim;
+			public Concat(int dim = 1) : base("Concat")
+			{
+				this.dim = dim;
+			}
+
+			public override Tensor forward(Tensor[] input)
+			{
+				return torch.concat(input, dim: dim);
+			}
+		}
+
+		public class Yolov5Detect : Module<Tensor[], Tensor[]>
+		{
 			bool dynamic = false;  // force grid reconstruction
 			bool export = false;// export mode
-
-			int[] model_stride = [8, 16, 32];
 
 			private readonly int nc;
 			private readonly int no;
 			private readonly int nl;
 			private readonly int na;
-			private List<Tensor> grid; // 存储网格坐标的列表
-			private List<Tensor> anchor_grid;
-			private Tensor anchors;
-			private readonly Sequential m = Sequential();
+			//private List<Tensor> grid; // 存储网格坐标的列表
 
-			public Detect(int nc, int[] ch, float[][] anchors, bool inplace = true) : base("Detect")
+			//private readonly Tensor anchors;
+			private readonly Sequential m = Sequential();
+			private float[][] anchors;
+			private readonly int[] ch;
+
+			private Device device;
+			private ScalarType scalarType;
+
+			public Yolov5Detect(int nc, int[] ch, float[][] anchors, bool inplace = true) : base("Yolov5Detect")
 			{
 				this.nc = nc;
 				no = nc + 5;// =85 每个类别需添加位置与置信度
 				nl = anchors.Length;
 				na = anchors[0].Length / 2; // =3 获得每个grid的anchor数量
-				float[] an = new float[anchors.Length * anchors[0].Length];
-				for (int i = 0; i < anchors.Length; i++)
-				{
-					for (int j = 0; j < anchors[1].Length; j++)
-					{
-						an[i * anchors[0].Length + j] = anchors[i][j];
-					}
-				}
-				this.anchors = tensor(an, [anchors.Length, anchors[0].Length / 2, 2]);
-				stride = tensor(model_stride, ScalarType.Float32);
-				grid = new List<Tensor>(nl);
-				anchor_grid = new List<Tensor>(nl);
-				for (int i = 0; i < nl; i++)
-				{
-					grid.Add(empty(0));
-					anchor_grid.Add(empty(0));
-				}
+				this.anchors = anchors;
+				this.ch = ch;
+				//grid = new List<Tensor>(nl);
+
 				for (int i = 0; i < ch.Length; i++)
 				{
 					m = m.append(Conv2d(ch[i], no * na, 1));
@@ -376,7 +516,11 @@ namespace YoloSharp
 
 			public override Tensor[] forward(Tensor[] x)
 			{
+				this.device = x[0].device;
+				this.scalarType = x[0].dtype;
+
 				List<Tensor> z = new List<Tensor>();
+				Tensor stride = tensor(new int[] { 8, 16, 32 }, dtype: scalarType, device: device);  //strides computed during build
 				for (int i = 0; i < nl; i++)
 				{
 					x[i] = ((Module<Tensor, Tensor>)m[i]).forward(x[i]);
@@ -386,14 +530,14 @@ namespace YoloSharp
 					x[i] = x[i].view(bs, na, no, ny, nx).permute(0, 1, 3, 4, 2).contiguous();
 					if (!training)
 					{
-						(grid[i], anchor_grid[i]) = _make_grid(nx, ny, i);
+						var (grid, anchor_grid) = _make_grid(nx, ny, i);
 						Tensor[] re = x[i].sigmoid().split([2, 2, nc + 1], 4);
 						Tensor xy = re[0];
 						Tensor wh = re[1];
 						Tensor conf = re[2];
 
-						xy = (xy * 2 + grid[i]) * stride[i];  // xy
-						wh = (wh * 2).pow(2) * anchor_grid[i];  // wh
+						xy = (xy * 2 + grid) * stride[i];  // xy
+						wh = (wh * 2).pow(2) * anchor_grid;  // wh
 						Tensor y = cat([xy, wh, conf], 4);
 						z.Add(y.view(bs, na * nx * ny, no));
 					}
@@ -406,13 +550,23 @@ namespace YoloSharp
 				else
 				{
 					var list = new List<Tensor>() { cat(z, 1) };
-					list.AddRange(x);
 					return list.ToArray();
 				}
 			}
 
 			private (Tensor, Tensor) _make_grid(int nx = 20, int ny = 20, int i = 0)
 			{
+				float[] an = new float[this.anchors.Length * this.anchors[0].Length];
+				for (int ii = 0; ii < this.anchors.Length; ii++)
+				{
+					for (int j = 0; j < this.anchors[1].Length; j++)
+					{
+						an[ii * this.anchors[0].Length + j] = this.anchors[ii][j];
+					}
+				}
+				Tensor anchors = tensor(an, [this.anchors.Length, this.anchors[0].Length / 2, 2], dtype: scalarType, device: device);
+				Tensor stride = tensor(new int[] { 8, 16, 32 }, dtype: scalarType, device: device);  //strides computed during build
+																									 //Tensor stride = tensor(ch, dtype: scalarType, device: device) / 8;  //strides computed during build
 				var d = anchors[i].device;
 				var t = anchors[i].dtype;
 
@@ -430,8 +584,188 @@ namespace YoloSharp
 			}
 		}
 
+		public class Yolov8Detect : Module<Tensor[], Tensor[]>
+		{
+			private bool dynamic = false;  // force grid reconstruction
+			private bool export = false; // export mode
+			internal bool end2end = false; // end2end
+			private int max_det = 300; // max_det
+			private long[] shape = null;
+			private Tensor anchors = torch.empty(0); // init
+			private Tensor strides = torch.empty(0); // init
+
+			private readonly int nc;
+			private readonly int nl;
+			private readonly int reg_max;
+			private readonly int no;
+			private readonly int[] stride;
+			private readonly ModuleList<Sequential> cv2 = new ModuleList<Sequential>();
+			private readonly ModuleList<Sequential> cv3 = new ModuleList<Sequential>();
+			private readonly Module<Tensor, Tensor> dfl;
+
+			public Yolov8Detect(int nc, int[] ch, bool end2end = true) : base("Yolov8Detect")
+			{
+				this.end2end = end2end;
+				this.nc = nc; // number of classes
+				this.nl = ch.Length;// number of detection layers
+				this.reg_max = 16; // DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
+				this.no = nc + this.reg_max * 4; // number of outputs per anchor
+				this.stride = new int[0]; // strides computed during build
+
+				int c2 = Math.Max(Math.Max(16, ch[0] / 4), this.reg_max * 4);
+				int c3 = Math.Max(ch[0], Math.Min(this.nc, 100));// channels
+
+				foreach (int x in ch)
+				{
+					cv2.append(Sequential(new Conv(x, c2, 3), new Conv(c2, c2, 3), nn.Conv2d(c2, 4 * this.reg_max, 1)));
+					cv3.append(nn.Sequential(
+								nn.Sequential(new DWConv(x, x, 3), new Conv(x, c3, 1)),
+								nn.Sequential(new DWConv(c3, c3, 3), new Conv(c3, c3, 1)),
+								nn.Conv2d(c3, this.nc, 1)));
+				}
+
+				this.dfl = this.reg_max > 1 ? new DFL(this.reg_max) : nn.Identity();
+
+				RegisterComponents();
+			}
+
+			public override Tensor[] forward(Tensor[] x)
+			{
+				var shape = x[0].shape; // BCHW
+				for (int i = 0; i < nl; i++)
+				{
+					var cv2Output = cv2[i].forward(x[i]);
+					var cv3Output = cv3[i].forward(x[i]);
+					x[i] = torch.cat(new[] { cv2Output, cv3Output }, 1);
+				}
+
+				if (training)
+				{
+					return x;
+				}
+
+				if (dynamic || !shape.Equals(this.shape))
+				{
+					(anchors, strides) = make_anchors(x, stride);
+					this.shape = shape;
+				}
+
+				var x_cat = torch.cat(x.Select(xi => xi.view(shape[0], no, -1)).ToArray(), 2);
+
+				var box = x_cat.narrow(1, 0, reg_max * 4);
+				var cls = x_cat.narrow(1, reg_max * 4, no - reg_max * 4);
+
+				var dbox = dist2bbox(dfl.forward(box), anchors[0].unsqueeze(0), xywh: true, dim: 1) * strides[0];
+				var y = torch.cat(new[] { dbox, cls.sigmoid() }, 1);
+
+				return export ? new[] { y } : new[] { y, x[0] };
+			}
+
+			//Decode predicted bounding boxes and class probabilities based on multiple-level feature maps.
+			private Tensor _inference(Tensor[] x)
+			{
+				long[] shape = x[0].shape;  // BCHW
+											//x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+				List<Tensor> xi_mix = new List<Tensor>();
+				foreach (var xi in x)
+				{
+					xi_mix.Add(xi.view(shape[0], this.no, -1));
+				}
+				Tensor x_cat = torch.cat(xi_mix, 2);
+
+				if (this.dynamic || this.shape != shape)
+				{
+					var (anchors, strides) = make_anchors(x, this.stride, 0.5f);
+					this.anchors = anchors.transpose(0, 1);
+					this.strides = strides.transpose(0, 1);
+					this.shape = shape;
+				}
+
+				Tensor[] box_cls = x_cat.split([this.reg_max * 4, this.nc], 1);
+				Tensor box = box_cls[0];
+				Tensor cls = box_cls[1];
+				Tensor dbox = decode_bboxes(this.dfl.forward(box), this.anchors.unsqueeze(0)) * this.strides;
+
+				return torch.cat([dbox, cls.sigmoid()], 1);
+
+			}
+
+			// Decode bounding boxes.
+			private Tensor decode_bboxes(Tensor bboxes, Tensor anchors)
+			{
+
+				return dist2bbox(bboxes, anchors, xywh: !this.end2end, dim: 1);
+			}
+
+			// Transform distance(ltrb) to box(xywh or xyxy).
+			private Tensor dist2bbox(Tensor distance, Tensor anchor_points, bool xywh = true, int dim = -1)
+			{
+				Tensor[] ltrb = distance.chunk(2, dim);
+				Tensor lt = ltrb[0];
+				Tensor rb = ltrb[1];
+
+				Tensor x1y1 = anchor_points - lt;
+				Tensor x2y2 = anchor_points + rb;
+
+				if (xywh)
+				{
+					Tensor c_xy = (x1y1 + x2y2) / 2;
+					Tensor wh = x2y2 - x1y1;
+					return torch.cat([c_xy, wh], dim);  // xywh bbox
+				}
+				return torch.cat([x1y1, x2y2], dim); // xyxy bbox
+			}
+
+			private (Tensor, Tensor) make_anchors(Tensor[] feats, int[] strides, float grid_cell_offset = 0.5f)
+			{
+				ScalarType dtype = feats[0].dtype;
+				Device device = feats[0].device;
+				List<Tensor> anchor_points = new List<Tensor>();
+				List<Tensor> stride_tensor = new List<Tensor>();
+				for (int i = 0; i < strides.Length; i++)
+				{
+					long h = feats[i].shape[2];
+					long w = feats[i].shape[3];
+					Tensor sx = torch.arange(w, device: device, dtype: dtype) + grid_cell_offset;  // shift x
+					Tensor sy = torch.arange(h, device: device, dtype: dtype) + grid_cell_offset;  // shift y
+					Tensor[] sy_sx = torch.meshgrid([sy, sx], indexing: "ij");
+					sy = sy_sx[0];
+					sx = sy_sx[1];
+					anchor_points.Add(torch.stack([sx, sy], -1).view(-1, 2));
+					stride_tensor.Add(torch.full([h * w, 1], strides[i], dtype: dtype, device: device));
+				}
+				return (torch.cat(anchor_points), torch.cat(stride_tensor));
+			}
+
+			private Tensor postprocess(Tensor preds, int max_det, int nc = 80)
+			{
+				//	Post-processes YOLO model predictions.
+				//	Args:
+				//		preds (torch.Tensor): Raw predictions with shape (batch_size, num_anchors, 4 + nc) with last dimension
+				//			format [x, y, w, h, class_probs].
+				//		max_det (int): Maximum detections per image.
+				//		nc (int, optional): Number of classes. Default: 80.
+				//	Returns:
+				//		(torch.Tensor): Processed predictions with shape (batch_size, min(max_det, num_anchors), 6) and last
+				//			dimension format [x, y, w, h, max_class_prob, class_index].
 
 
+				long batch_size = preds.shape[0];  // i.e. shape(16,8400,84)
+				int anchors = (int)preds.shape[1];
+				Tensor[] boxes_scores = preds.split([4, nc], dim: -1);
+				Tensor boxes = boxes_scores[0];
+				Tensor scores = boxes_scores[1];
+
+				Tensor index = scores.amax(-1).topk(Math.Min(max_det, anchors)).indexes.unsqueeze(-1);
+				boxes = boxes.gather(dim: 1, index: index.repeat(1, 1, 4));
+				scores = scores.gather(dim: 1, index: index.repeat(1, 1, nc));
+				(scores, index) = scores.flatten(1).topk(Math.Min(max_det, anchors));
+
+				Tensor i = torch.arange(batch_size)[TensorIndex.Ellipsis, TensorIndex.None]; // batch indices
+				return torch.cat([boxes[i, index / nc], scores[TensorIndex.Ellipsis, TensorIndex.None], (index % nc)[TensorIndex.Ellipsis, TensorIndex.None].@float()], dim: -1);
+			}
+
+		}
 
 	}
 }

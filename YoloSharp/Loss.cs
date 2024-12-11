@@ -77,7 +77,6 @@ namespace YoloSharp
 			}
 		}
 
-
 		public class Yolov5Loss : Module<Tensor[], Tensor, (Tensor, Tensor)>
 		{
 			private readonly float lambda_coord = 5.0f;
@@ -94,6 +93,7 @@ namespace YoloSharp
 			private readonly float[][] anchors;
 
 			private Device device = new Device(DeviceType.CPU);
+			private ScalarType dtype = ScalarType.Float32;
 
 			private readonly float anchor_t = 4.0f;
 			private readonly bool sort_obj_iou = false;
@@ -131,15 +131,17 @@ namespace YoloSharp
 			public override (Tensor, Tensor) forward(Tensor[] preds, Tensor targets)
 			{
 				device = targets.device;
+				dtype = targets.dtype;
+
 				var BCEcls = BCEWithLogitsLoss(pos_weights: tensor(new float[] { h_cls_pw }, device: device));
 				var BCEobj = BCEWithLogitsLoss(pos_weights: tensor(new float[] { h_obj_pw }, device: device));
 
 				//var BCEcls = new FocalLoss(BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_cls_pw }, device: this.device)), fl_gamma);
 				//var BCEobj = new FocalLoss(BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_obj_pw }, device: this.device)), fl_gamma);
 
-				var lcls = zeros(1, device: device);  // class loss
-				var lbox = zeros(1, device: device);  // box loss
-				var lobj = zeros(1, device: device);  // object loss
+				var lcls = zeros(1, device: device, dtype: dtype);  // class loss
+				var lbox = zeros(1, device: device, dtype: dtype);  // box loss
+				var lobj = zeros(1, device: device, dtype: dtype);  // object loss
 
 				var (tcls, tbox, indices, anchors) = build_targets(preds, targets);
 				Tensor tobj = zeros(0);
@@ -150,7 +152,7 @@ namespace YoloSharp
 					var a = indices[i][1];
 					var gj = indices[i][2];
 					var gi = indices[i][3];
-					tobj = zeros(preds[i].shape.Take(4).ToArray(), device: device);  // targets obj
+					tobj = zeros(preds[i].shape.Take(4).ToArray(), device: device, dtype: dtype);  // targets obj
 					long n = b.shape[0];
 					if (n > 0)
 					{
@@ -183,9 +185,9 @@ namespace YoloSharp
 						// Classification
 						if (nc > 1)  // cls loss (only if multiple classes)
 						{
-							var tt = full_like(pcls, cn, device: device);  // targets
+							var tt = full_like(pcls, cn, device: device, dtype: ScalarType.Float32);  // targets
 							tt[arange(n), tcls[i]] = cp;
-							lcls += BCEcls.forward(pcls, tt);  // BCE
+							lcls += BCEcls.forward(pcls, tt.to(dtype));  // BCE
 						}
 
 					}
@@ -229,8 +231,8 @@ namespace YoloSharp
 				int na = this.na;
 				int nt = (int)targets.shape[0];  // number of anchors, targets
 												 //tcls, tbox, indices, anch = [], [], [], []
-				var gain = ones(7, device: device);// normalized to gridspace gain
-				var ai = arange(na, device: device).@float().view(na, 1).repeat(1, nt);  // same as .repeat_interleave(nt)
+				var gain = ones(7, device: device, dtype: dtype);// normalized to gridspace gain
+				var ai = arange(na, device: device, dtype: dtype).view(na, 1).repeat(1, nt);  // same as .repeat_interleave(nt)
 				targets = cat([targets.repeat(na, 1, 1), ai.unsqueeze(-1)], 2);// append anchor indices
 
 
@@ -239,9 +241,9 @@ namespace YoloSharp
 				for (int i = 0; i < nl; i++)
 				{
 					Tensor anchors = this.anchors[i];
-					anchors = anchors.view(3, 2).to(device);
+					anchors = anchors.view(3, 2).to(dtype, device);
 					var shape = p[i].shape;
-					var temp = tensor(new float[] { shape[3], shape[2], shape[3], shape[2] }, device: device);
+					var temp = tensor(new float[] { shape[3], shape[2], shape[3], shape[2] }, device: device, dtype: dtype);
 
 					gain.index_put_(temp, new long[] { 2, 3, 4, 5 });
 					var t = targets * gain;
@@ -372,7 +374,84 @@ namespace YoloSharp
 			}
 		}
 
+		public class v8DetectionLoss : Module<Tensor[], Tensor>
+		{
+			private readonly int[] stride;
+			private readonly int nc;
+			private readonly int no;
+			private readonly int reg_max;
+			private readonly Device device;
+			private readonly bool use_dfl;
+
+			private readonly BCEWithLogitsLoss bce;
+
+			public v8DetectionLoss(int[] stride, int nc = 80, int reg_max = 16, int tal_topk = 10, DeviceType deviceType = DeviceType.CPU) : base("v8DetectionLoss")
+			{
+				this.bce = BCEWithLogitsLoss(reduction: Reduction.None);
+				this.stride = stride; // model strides
+				this.nc = nc; // number of classes
+				this.no = nc + reg_max * 4;
+				this.reg_max = reg_max;
+				this.device = new Device(deviceType);
+				this.use_dfl = reg_max > 1;
+			}
+
+			public override Tensor forward(Tensor[] preds)
+			{
+				Tensor loss = torch.zeros(3, device: this.device); // box, cls, dfl
+				Tensor[] feats = (Tensor[])preds.Clone();
+				List<Tensor> feats_mix = new List<Tensor>();
+				foreach (Tensor xi in feats)
+				{
+					feats_mix.Add(xi.view(feats[0].shape[0], this.no, -1));
+				}
+				Tensor[] pred_distri_scores = torch.cat(feats_mix, 2).split([this.reg_max * 4, this.nc], 1);
+				Tensor pred_scores = pred_distri_scores[0];
+				Tensor pred_distri = pred_distri_scores[1];
+				pred_scores = pred_scores.permute(0, 2, 1).contiguous();
+				pred_distri = pred_distri.permute(0, 2, 1).contiguous();
+
+				ScalarType dtype = pred_scores.dtype;
+				long batch_size = pred_scores.shape[0];
+
+				Tensor imgsz = torch.tensor(feats[0].shape[2..], device: this.device, dtype: dtype) * this.stride[0]; // image size (h,w)
+
+				return null;
+			}
+
+			private class TaskAlignedAssigner : Module
+			{
+				private readonly int topk;
+				private readonly int num_classes;
+				private readonly int bg_idx;
+
+				private readonly float alpha;
+				private readonly float beta;
+
+				private readonly float eps;
+				public TaskAlignedAssigner(int topk = 13, int num_classes = 80, float alpha = 1.0f, float beta = 6.0f, float eps = 1e-9f) : base("TaskAlignedAssigner")
+				{
+					this.topk = topk;
+					this.num_classes = num_classes;
+					this.bg_idx = num_classes;
+					this.alpha = alpha;
+					this.beta = beta;
+					this.eps = eps;
+				}
+
+				public Tensor forward(Tensor pd_scores, Tensor pd_bboxes, Tensor anc_points, Tensor gt_labels, Tensor gt_bboxes, Tensor mask_gt)
+				{
+					throw new NotImplementedException();
+				}
+
+			}
+
+
+		}
+
 	}
+
+
 
 }
 

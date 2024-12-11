@@ -15,24 +15,25 @@ namespace YoloSharp
 		private static float lr = 0.01f;
 		private static int imageSize = 640;
 		private static Device device = CUDA;
-		//private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.m).to(device);
-		//private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n).to(device);
-		private static Yolo.Yolov11 yolo = new Yolo.Yolov11(sortCount, Yolo.YoloSize.n).to(device);
+		private static ScalarType scalarType = ScalarType.Float32;
+		private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n);
 
 		static void Main(string[] args)
 		{
-			Train();
+			//Train();
 			Predict();
 		}
 
 		private static void Train()
 		{
 			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
-			DataLoader loader = new DataLoader(yoloDataset, 8, num_worker: 32, shuffle: true, device: device);
+			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
 			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).to(device);
-
+			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
 			yolo.train();
-			var optimizer = optim.SGD(yolo.Parameters(), lr, weight_decay: 0.0005);
+			yolo.to(device, scalarType);
+
+			var optimizer = optim.SGD(yolo.parameters(), lr, weight_decay: 0.0005);
 
 			float tempLoss = float.MaxValue;
 
@@ -48,8 +49,8 @@ namespace YoloSharp
 					for (int i = 0; i < indexs.Length; i++)
 					{
 						var (img, lb) = yoloDataset.GetDataTensor(indexs[i]);
-						images[i] = img.to(device);
-						labels[i] = full(new long[] { lb.shape[0], lb.shape[1] + 1 }, i, ScalarType.Float32, device: lb.device);
+						images[i] = img.to(scalarType, device);
+						labels[i] = full(new long[] { lb.shape[0], lb.shape[1] + 1 }, i, dtype: scalarType, device: lb.device);
 						labels[i].slice(1, 1, lb.shape[1] + 1, 1).copy_(lb);
 					}
 					Tensor imageTensor = concat(images);
@@ -61,11 +62,11 @@ namespace YoloSharp
 					}
 
 					Tensor[] list = yolo.forward(imageTensor);
+
 					var (ls, ls_item) = loss.forward(list.ToArray(), labelTensor);
-					optimizer.zero_grad();
 					ls.backward();
 					optimizer.step();
-
+					optimizer.zero_grad();
 					Console.WriteLine($"Epoch {epoch}, Step {step}/{loader.Count} , Loss: {ls.ToSingle()}");
 
 					if (tempLoss > ls.ToSingle())
@@ -74,10 +75,10 @@ namespace YoloSharp
 						{
 							Directory.CreateDirectory("result");
 						}
-						yolo.Save(Path.Combine("result", "best.bin"));
+						yolo.save(Path.Combine("result", "best.bin"));
 						tempLoss = ls.ToSingle();
 					}
-					yolo.Save(Path.Combine("result", "last.bin"));
+					yolo.save(Path.Combine("result", "last.bin"));
 					GC.Collect();
 				}
 			}
@@ -85,182 +86,169 @@ namespace YoloSharp
 			{
 				Directory.CreateDirectory("result");
 			}
-			yolo.Save(Path.Combine("result", "yolo_last.bin"));
+			yolo.save(Path.Combine("result", "yolo_last.bin"));
 		}
 
 		private static void Predict()
 		{
-			int predictIndex = 1;
-			float PredictThreshold = 0.5f;
-			float ObjectThreshold = 0.5f;
-			float NmsThreshold = 0.5f;
-			double[] means = [0.485, 0.456, 0.406], stdevs = [0.229, 0.224, 0.225];
+			int predictIndex = 15;
+			float PredictThreshold = 0.25f;
+			float IouThreshold = 0.5f;
 
 			List<Result> results = new List<Result>();
 
 			YoloDataset yoloDataset = new YoloDataset(dataPath, useMosaic: false);
-			Tensor input = yoloDataset.GetDataTensor(predictIndex).Item1;
-			yolo.load("result/last.bin");
+			Tensor input = yoloDataset.GetDataTensor(predictIndex).Item1.to(scalarType, device);
+			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
+			yolo.to(device, scalarType);
+			//yolo.load(@"result/best.bin");
 			yolo.eval();
-			Tensor[] tensors = yolo.forward(input.cuda());
 
-			Tensor resultTensor = tensors[0].squeeze(0);
-			Tensor predScores = resultTensor[TensorIndex.Ellipsis, TensorIndex.Slice(4, 5)];
-			var preds = predScores > PredictThreshold;
+			Tensor[] tensors = yolo.forward(input);
+			var re = NonMaxSuppression(tensors[0], PredictThreshold, IouThreshold);
 
-			var indices = nonzero(preds)[TensorIndex.Ellipsis, TensorIndex.Slice(0, 1)].squeeze(-1);
-			var rResult = resultTensor[indices];
-			if (rResult.shape[0] > 0)
+			if (re[0].numel() > 0)
 			{
-				for (int i = 0; i < rResult.shape[0]; i++)
+				for (int i = 0; i < re[0].shape[0]; i++)
 				{
-					var scores = rResult[i][TensorIndex.Ellipsis, TensorIndex.Slice(5, rResult.shape[1] + 1)];
-					var (maxScore, index) = scores.max(0);
-					if (maxScore.ToSingle() > ObjectThreshold)
+					results.Add(new Result
 					{
-						results.Add(new Result
-						{
-							sort = (int)index.ToInt64(),
-							score = maxScore.ToSingle(),
-							x = rResult[i][0].ToSingle(),
-							y = rResult[i][1].ToSingle(),
-							w = rResult[i][2].ToSingle(),
-							h = rResult[i][3].ToSingle(),
-						});
-					}
+						x = re[0][i][0].ToInt32(),
+						y = re[0][i][1].ToInt32(),
+						w = re[0][i][2].ToInt32(),
+						h = re[0][i][3].ToInt32(),
+						score = re[0][i][4].ToSingle(),
+						sort = re[0][i][5].ToInt32(),
+					});
 				}
-
-				results = NMS(results, NmsThreshold);
 			}
 
-			Tensor mean = tensor(means).view(3, 1, 1);
-			Tensor std = tensor(stdevs).view(3, 1, 1);
-			Tensor orgImg = ((input.cpu().squeeze(0) * std + mean) * 255.0f).@byte();
-
-			//Tensor orgImg = (input.squeeze(0) * 255.0f).@byte().cpu();
+			Tensor orgImg = (input.squeeze(0) * 255).@byte().cpu();
 			orgImg = orgImg.index_select(0, tensor(new long[] { 2, 1, 0 }));
 			orgImg = orgImg.permute([1, 2, 0]).contiguous();
-			Bitmap bitmap = new Bitmap(imageSize, imageSize);
-			BitmapData bitmapData = bitmap.LockBits(new Rectangle(0, 0, imageSize, imageSize), ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
-			Marshal.Copy(orgImg.bytes.ToArray(), 0, bitmapData.Scan0, imageSize * imageSize * 3);
+			Bitmap bitmap = new Bitmap((int)orgImg.shape[1], (int)orgImg.shape[0]);
+			BitmapData bitmapData = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
+			Marshal.Copy(orgImg.bytes.ToArray(), 0, bitmapData.Scan0, bitmapData.Stride * bitmapData.Height);
 			bitmap.UnlockBits(bitmapData);
-
 
 			Graphics g = Graphics.FromImage(bitmap);
 			foreach (Result result in results)
 			{
-				Point point = new Point((int)(result.x - result.w / 2), (int)(result.y - result.h / 2));
-				Rectangle rect = new Rectangle(point, new System.Drawing.Size((int)result.w, (int)result.h));
-				string str = string.Format("Sort:{0}, Score:{1}", result.sort, result.score);
+				Point point = new Point(result.x - result.w / 2, result.y - result.h / 2);
+				Rectangle rect = new Rectangle(point, new System.Drawing.Size(result.w, result.h));
+				string str = string.Format("Sort:{0}, Score:{1:F1}%", result.sort, result.score * 100);
 				g.DrawRectangle(Pens.Red, rect);
 				g.DrawString(str, new Font(FontFamily.GenericMonospace, 10), new SolidBrush(Color.Red), point);
-
 			}
 			g.Save();
 			bitmap.Save("bitmap.jpg");
-
 		}
 
-
-		private static Bitmap DrawImageWithLabels(Tensor img, Tensor labels)
-		{
-			torchvision.io.DefaultImager = new torchvision.io.SkiaImager();
-			if (img.shape.Length == 4)
-			{
-				img = img.squeeze(0);
-			}
-			int width = (int)img.shape[2];
-			int height = (int)img.shape[1];
-			img = (img * 255.0f).to(ScalarType.Byte);
-			img = img.cpu();
-
-			torchvision.io.write_jpeg(img, "img.jpg");
-
-			byte[] tensorBytes = img.bytes.ToArray();
-			Bitmap bitmap = new Bitmap(width, height);
-			BitmapData bitmapData = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
-
-			byte[] bytes = new byte[width * height * 3];
-			for (int h = 0; h < height; h++)
-			{
-				for (int w = 0; w < width; w++)
-				{
-					bytes[h * width * 3 + w * 3 + 0] = tensorBytes[2 * height * width + width * h + w];
-					bytes[h * width * 3 + w * 3 + 1] = tensorBytes[1 * height * width + width * h + w];
-					bytes[h * width * 3 + w * 3 + 2] = tensorBytes[0 * height * width + width * h + w];
-
-				}
-			}
-
-			Marshal.Copy(bytes, 0, bitmapData.Scan0, width * height * 3);
-			bitmap.UnlockBits(bitmapData);
-
-			Graphics g = Graphics.FromImage(bitmap);
-
-			for (int i = 0; i < labels.shape[0]; i++)
-			{
-				int w = (int)(labels[i][3].ToSingle() * width);
-				int h = (int)(labels[i][4].ToSingle() * height);
-				int x = (int)(labels[i][1].ToSingle() * width - w / 2);
-				int y = (int)(labels[i][2].ToSingle() * height - h / 2);
-				int sort = labels[i][0].ToInt32();
-				Point point = new Point(x, y);
-				Rectangle rect = new Rectangle(x, y, w, h);
-				g.DrawRectangle(Pens.Red, rect);
-				string str = string.Format("Sort:{0}", sort);
-				g.DrawString(str, new Font(FontFamily.GenericMonospace, 10), new SolidBrush(Color.Red), point);
-			}
-			g.Save();
-			return bitmap;
-		}
-
-		private static List<Result> NMS(List<Result> orgResults, float threshold = 0.5f)
-		{
-			List<Result> results = new List<Result>();
-			List<int> sorts = new List<int>();
-			foreach (Result re in orgResults)
-			{
-				if (!sorts.Contains(re.sort))
-				{
-					sorts.Add(re.sort);
-				}
-			}
-			foreach (int sort in sorts)
-			{
-				List<Result> list = orgResults.FindAll(re => re.sort == sort);
-				float[] data = new float[list.Count * 4];
-				float[] scores = new float[list.Count];
-				for (int i = 0; i < list.Count; i++)
-				{
-					data[4 * i + 0] = list[i].x - list[i].w / 2;
-					data[4 * i + 1] = list[i].y - list[i].h / 2;
-					data[4 * i + 2] = list[i].x + list[i].w / 2;
-					data[4 * i + 3] = list[i].y + list[i].h / 2;
-					scores[i] = list[i].score;
-				}
-
-				Tensor boxes = tensor(data);
-				boxes = boxes.view([list.Count, 4]);
-				Tensor scr = tensor(scores);
-				Tensor r = torchvision.ops.nms(boxes, scr, threshold);
-				long[] nmsIndexs = r.data<long>().ToArray();
-				foreach (long nms in nmsIndexs)
-				{
-					results.Add(list[(int)nms]);
-				}
-			}
-			return results;
-		}
 
 		class Result
 		{
 			public float score;
 			public int sort;
-			public float x;
-			public float y;
-			public float w;
-			public float h;
+			public int x;
+			public int y;
+			public int w;
+			public int h;
+		}
+
+
+		public static List<Tensor> NonMaxSuppression(Tensor prediction, float confThreshold = 0.25f, float iouThreshold = 0.45f, bool agnostic = false, int max_det = 300, int nm = 0)
+		{
+			// Checks
+			if (confThreshold < 0 || confThreshold > 1)
+			{
+				throw new ArgumentException($"Invalid Confidence threshold {confThreshold}, valid values are between 0.0 and 1.0");
+			}
+			if (iouThreshold < 0 || iouThreshold > 1)
+			{
+				throw new ArgumentException($"Invalid IoU {iouThreshold}, valid values are between 0.0 and 1.0");
+			}
+
+			var device = prediction.device;
+			var scalType = prediction.dtype;
+
+			var bs = prediction.shape[0]; // batch size
+			var nc = prediction.shape[2] - nm - 5; // number of classes
+			var xc = prediction[TensorIndex.Ellipsis, 4] > confThreshold; // candidates
+
+			// Settings
+			var max_wh = 7680; // maximum box width and height
+			var max_nms = 30000; // maximum number of boxes into torchvision.ops.nms()
+			var time_limit = 0.5f + 0.05f * bs; // seconds to quit after
+
+			var t = DateTime.Now;
+			var mi = 5 + nc; // mask start index
+			var output = new List<Tensor>(new Tensor[bs]);
+			for (int xi = 0; xi < bs; xi++)
+			{
+				var x = prediction[xi];
+				x = x[xc[xi]]; // confidence
+
+				// Compute conf
+				x[TensorIndex.Ellipsis, TensorIndex.Slice(5, mi)] *= x[TensorIndex.Ellipsis, 4].unsqueeze(-1); // conf = obj_conf * cls_conf
+
+				// Box/Mask
+				var box = XYWH2XYXY(x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]); // center_x, center_y, width, height) to (x1, y1, x2, y2)
+
+				// Detections matrix nx6 (xyxy, conf, cls)
+
+				var conf = x[TensorIndex.Colon, TensorIndex.Slice(5, mi)].max(1, true);
+				var j = conf.indexes;
+				x = torch.cat([box, conf.values, j.to_type(scalType)], 1)[conf.values.view(-1) > confThreshold];
+
+				var n = x.shape[0]; // number of boxes
+				if (n == 0)
+				{
+					continue;
+				}
+
+				x = x[x[TensorIndex.Ellipsis, 4].argsort(descending: true)][TensorIndex.Slice(0, max_nms)]; // sort by confidence and remove excess boxes
+
+				// Batched NMS
+				var c = x[TensorIndex.Ellipsis, 5].unsqueeze(-1) * (agnostic ? 0 : max_wh); // classes
+				var boxes = x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] + c;
+				var scores = x[TensorIndex.Ellipsis, 4];
+				var i = torchvision.ops.nms(boxes, scores, iouThreshold); // NMS
+				i = i[TensorIndex.Slice(0, max_det)]; // limit detections
+
+				output[xi] = x[i];
+				output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = XYXY2XYWH(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]);
+
+				if ((DateTime.Now - t).TotalSeconds > time_limit)
+				{
+					Console.WriteLine($"WARNING ⚠️ NMS time limit {time_limit:F3}s exceeded");
+					break; // time limit exceeded
+				}
+			}
+
+			return output;
+		}
+
+		private static Tensor XYWH2XYXY(Tensor x)
+		{
+			Tensor y = x.clone();
+			y[TensorIndex.Ellipsis, 0] = x[TensorIndex.Ellipsis, 0] - x[TensorIndex.Ellipsis, 2] / 2;  // top left x
+			y[TensorIndex.Ellipsis, 1] = x[TensorIndex.Ellipsis, 1] - x[TensorIndex.Ellipsis, 3] / 2;  // top left y
+			y[TensorIndex.Ellipsis, 2] = x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2] / 2; // bottom right x
+			y[TensorIndex.Ellipsis, 3] = x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3] / 2; // bottom right y
+			return y;
+		}
+
+		private static Tensor XYXY2XYWH(Tensor x)
+		{
+			var y = x.clone();
+			y[TensorIndex.Ellipsis, 0] = (x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2]) / 2;  // x center
+			y[TensorIndex.Ellipsis, 1] = (x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3]) / 2;// y center
+			y[TensorIndex.Ellipsis, 2] = (x[TensorIndex.Ellipsis, 2] - x[TensorIndex.Ellipsis, 0]);  // width
+			y[TensorIndex.Ellipsis, 3] = (x[TensorIndex.Ellipsis, 3] - x[TensorIndex.Ellipsis, 1]);  // height
+			return y;
 		}
 
 	}
+
 }
+
