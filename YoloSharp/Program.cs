@@ -11,29 +11,31 @@ namespace YoloSharp
 	{
 		private static string dataPath = @"..\..\..\Assets\coco128";
 		private static int sortCount = 80;
-		private static int epochs = 300000;
-		private static float lr = 0.01f;
+		private static int epochs = 100;
+		private static float lr = 0.0001f;
 		private static int imageSize = 640;
 		private static Device device = CUDA;
 		private static ScalarType scalarType = ScalarType.Float32;
-		private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n);
+		//private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n);
+		private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.n);
 
 		static void Main(string[] args)
 		{
 			//Train();
-			Predict();
+			ImagePredict();
 		}
 
 		private static void Train()
 		{
-			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
+			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: false);
 			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
-			Loss.Yolov5Loss loss = new Loss.Yolov5Loss(sortCount).to(device);
-			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
+			//Loss.Yolov5DetectionLoss loss = new Loss.Yolov5DetectionLoss(sortCount).to(device);
+			Loss.Yolov8DetectionLoss loss = new Loss.Yolov8DetectionLoss(sortCount).to(device);
+			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov8\Yolov8n.bin");
 			yolo.train();
 			yolo.to(device, scalarType);
 
-			var optimizer = optim.SGD(yolo.parameters(), lr, weight_decay: 0.0005);
+			var optimizer = optim.AdamW(yolo.parameters(), lr, weight_decay: 0.0005);
 
 			float tempLoss = float.MaxValue;
 
@@ -54,6 +56,7 @@ namespace YoloSharp
 						labels[i].slice(1, 1, lb.shape[1] + 1, 1).copy_(lb);
 					}
 					Tensor imageTensor = concat(images);
+
 					Tensor labelTensor = concat(labels);
 
 					if (labelTensor.shape[0] == 0)
@@ -62,7 +65,6 @@ namespace YoloSharp
 					}
 
 					Tensor[] list = yolo.forward(imageTensor);
-
 					var (ls, ls_item) = loss.forward(list.ToArray(), labelTensor);
 					ls.backward();
 					optimizer.step();
@@ -89,39 +91,27 @@ namespace YoloSharp
 			yolo.save(Path.Combine("result", "yolo_last.bin"));
 		}
 
-		private static void Predict()
+		private static void ImagePredict()
 		{
-			int predictIndex = 15;
-			float PredictThreshold = 0.25f;
+			int predictIndex = 10;
+			float PredictThreshold = 0.1f;
 			float IouThreshold = 0.5f;
-
-			List<Result> results = new List<Result>();
 
 			YoloDataset yoloDataset = new YoloDataset(dataPath, useMosaic: false);
 			Tensor input = yoloDataset.GetDataTensor(predictIndex).Item1.to(scalarType, device);
-			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
+			//yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
 			yolo.to(device, scalarType);
-			//yolo.load(@"result/best.bin");
+
+
+			yolo.load(@"result/best.bin");
+			//yolo.load(@"yolov8n.bin");
 			yolo.eval();
 
 			Tensor[] tensors = yolo.forward(input);
-			var re = NonMaxSuppression(tensors[0], PredictThreshold, IouThreshold);
 
-			if (re[0].numel() > 0)
-			{
-				for (int i = 0; i < re[0].shape[0]; i++)
-				{
-					results.Add(new Result
-					{
-						x = re[0][i][0].ToInt32(),
-						y = re[0][i][1].ToInt32(),
-						w = re[0][i][2].ToInt32(),
-						h = re[0][i][3].ToInt32(),
-						score = re[0][i][4].ToSingle(),
-						sort = re[0][i][5].ToInt32(),
-					});
-				}
-			}
+			// You should selet correct Predictor: Predict.Yolov5Predict or Predict.Yolov8Predict 
+			Predict.Yolov8Predict predict = new Predict.Yolov8Predict();
+			var results = predict.Predict(tensors[0]);
 
 			Tensor orgImg = (input.squeeze(0) * 255).@byte().cpu();
 			orgImg = orgImg.index_select(0, tensor(new long[] { 2, 1, 0 }));
@@ -132,7 +122,7 @@ namespace YoloSharp
 			bitmap.UnlockBits(bitmapData);
 
 			Graphics g = Graphics.FromImage(bitmap);
-			foreach (Result result in results)
+			foreach (var result in results)
 			{
 				Point point = new Point(result.x - result.w / 2, result.y - result.h / 2);
 				Rectangle rect = new Rectangle(point, new System.Drawing.Size(result.w, result.h));
@@ -142,110 +132,6 @@ namespace YoloSharp
 			}
 			g.Save();
 			bitmap.Save("bitmap.jpg");
-		}
-
-
-		class Result
-		{
-			public float score;
-			public int sort;
-			public int x;
-			public int y;
-			public int w;
-			public int h;
-		}
-
-
-		public static List<Tensor> NonMaxSuppression(Tensor prediction, float confThreshold = 0.25f, float iouThreshold = 0.45f, bool agnostic = false, int max_det = 300, int nm = 0)
-		{
-			// Checks
-			if (confThreshold < 0 || confThreshold > 1)
-			{
-				throw new ArgumentException($"Invalid Confidence threshold {confThreshold}, valid values are between 0.0 and 1.0");
-			}
-			if (iouThreshold < 0 || iouThreshold > 1)
-			{
-				throw new ArgumentException($"Invalid IoU {iouThreshold}, valid values are between 0.0 and 1.0");
-			}
-
-			var device = prediction.device;
-			var scalType = prediction.dtype;
-
-			var bs = prediction.shape[0]; // batch size
-			var nc = prediction.shape[2] - nm - 5; // number of classes
-			var xc = prediction[TensorIndex.Ellipsis, 4] > confThreshold; // candidates
-
-			// Settings
-			var max_wh = 7680; // maximum box width and height
-			var max_nms = 30000; // maximum number of boxes into torchvision.ops.nms()
-			var time_limit = 0.5f + 0.05f * bs; // seconds to quit after
-
-			var t = DateTime.Now;
-			var mi = 5 + nc; // mask start index
-			var output = new List<Tensor>(new Tensor[bs]);
-			for (int xi = 0; xi < bs; xi++)
-			{
-				var x = prediction[xi];
-				x = x[xc[xi]]; // confidence
-
-				// Compute conf
-				x[TensorIndex.Ellipsis, TensorIndex.Slice(5, mi)] *= x[TensorIndex.Ellipsis, 4].unsqueeze(-1); // conf = obj_conf * cls_conf
-
-				// Box/Mask
-				var box = XYWH2XYXY(x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]); // center_x, center_y, width, height) to (x1, y1, x2, y2)
-
-				// Detections matrix nx6 (xyxy, conf, cls)
-
-				var conf = x[TensorIndex.Colon, TensorIndex.Slice(5, mi)].max(1, true);
-				var j = conf.indexes;
-				x = torch.cat([box, conf.values, j.to_type(scalType)], 1)[conf.values.view(-1) > confThreshold];
-
-				var n = x.shape[0]; // number of boxes
-				if (n == 0)
-				{
-					continue;
-				}
-
-				x = x[x[TensorIndex.Ellipsis, 4].argsort(descending: true)][TensorIndex.Slice(0, max_nms)]; // sort by confidence and remove excess boxes
-
-				// Batched NMS
-				var c = x[TensorIndex.Ellipsis, 5].unsqueeze(-1) * (agnostic ? 0 : max_wh); // classes
-				var boxes = x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] + c;
-				var scores = x[TensorIndex.Ellipsis, 4];
-				var i = torchvision.ops.nms(boxes, scores, iouThreshold); // NMS
-				i = i[TensorIndex.Slice(0, max_det)]; // limit detections
-
-				output[xi] = x[i];
-				output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = XYXY2XYWH(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]);
-
-				if ((DateTime.Now - t).TotalSeconds > time_limit)
-				{
-					Console.WriteLine($"WARNING ⚠️ NMS time limit {time_limit:F3}s exceeded");
-					break; // time limit exceeded
-				}
-			}
-
-			return output;
-		}
-
-		private static Tensor XYWH2XYXY(Tensor x)
-		{
-			Tensor y = x.clone();
-			y[TensorIndex.Ellipsis, 0] = x[TensorIndex.Ellipsis, 0] - x[TensorIndex.Ellipsis, 2] / 2;  // top left x
-			y[TensorIndex.Ellipsis, 1] = x[TensorIndex.Ellipsis, 1] - x[TensorIndex.Ellipsis, 3] / 2;  // top left y
-			y[TensorIndex.Ellipsis, 2] = x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2] / 2; // bottom right x
-			y[TensorIndex.Ellipsis, 3] = x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3] / 2; // bottom right y
-			return y;
-		}
-
-		private static Tensor XYXY2XYWH(Tensor x)
-		{
-			var y = x.clone();
-			y[TensorIndex.Ellipsis, 0] = (x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2]) / 2;  // x center
-			y[TensorIndex.Ellipsis, 1] = (x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3]) / 2;// y center
-			y[TensorIndex.Ellipsis, 2] = (x[TensorIndex.Ellipsis, 2] - x[TensorIndex.Ellipsis, 0]);  // width
-			y[TensorIndex.Ellipsis, 3] = (x[TensorIndex.Ellipsis, 3] - x[TensorIndex.Ellipsis, 1]);  // height
-			return y;
 		}
 
 	}

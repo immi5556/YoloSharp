@@ -166,7 +166,7 @@ namespace YoloSharp
 				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
 				for (int i = 0; i < n; i++)
 				{
-					m = m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, e));
+					m = m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, 1));
 				}
 				RegisterComponents();
 			}
@@ -586,8 +586,6 @@ namespace YoloSharp
 
 		public class Yolov8Detect : Module<Tensor[], Tensor[]>
 		{
-			private bool dynamic = false;  // force grid reconstruction
-			private bool export = false; // export mode
 			internal bool end2end = false; // end2end
 			private int max_det = 300; // max_det
 			private long[] shape = null;
@@ -610,7 +608,7 @@ namespace YoloSharp
 				this.nl = ch.Length;// number of detection layers
 				this.reg_max = 16; // DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
 				this.no = nc + this.reg_max * 4; // number of outputs per anchor
-				this.stride = new int[0]; // strides computed during build
+				this.stride = new int[] { 8, 16, 32 }; // strides computed during build
 
 				int c2 = Math.Max(Math.Max(16, ch[0] / 4), this.reg_max * 4);
 				int c3 = Math.Max(ch[0], Math.Min(this.nc, 100));// channels
@@ -618,54 +616,37 @@ namespace YoloSharp
 				foreach (int x in ch)
 				{
 					cv2.append(Sequential(new Conv(x, c2, 3), new Conv(c2, c2, 3), nn.Conv2d(c2, 4 * this.reg_max, 1)));
-					cv3.append(nn.Sequential(
-								nn.Sequential(new DWConv(x, x, 3), new Conv(x, c3, 1)),
-								nn.Sequential(new DWConv(c3, c3, 3), new Conv(c3, c3, 1)),
-								nn.Conv2d(c3, this.nc, 1)));
+					cv3.append(nn.Sequential(new Conv(x, c3, 3), new Conv(c3, c3, 3), nn.Conv2d(c3, this.nc, 1)));
 				}
 
 				this.dfl = this.reg_max > 1 ? new DFL(this.reg_max) : nn.Identity();
-
 				RegisterComponents();
 			}
 
 			public override Tensor[] forward(Tensor[] x)
 			{
-				var shape = x[0].shape; // BCHW
 				for (int i = 0; i < nl; i++)
 				{
-					var cv2Output = cv2[i].forward(x[i]);
-					var cv3Output = cv3[i].forward(x[i]);
-					x[i] = torch.cat(new[] { cv2Output, cv3Output }, 1);
+					x[i] = torch.cat(new[] { cv2[i].forward(x[i]), cv3[i].forward(x[i]) }, 1);
 				}
 
 				if (training)
 				{
 					return x;
 				}
-
-				if (dynamic || !shape.Equals(this.shape))
+				else
 				{
-					(anchors, strides) = make_anchors(x, stride);
-					this.shape = shape;
+					var shape = x[0].shape; // BCHW
+					Tensor y = _inference(x);
+					return new Tensor[] { y }.Concat(x).ToArray();
 				}
-
-				var x_cat = torch.cat(x.Select(xi => xi.view(shape[0], no, -1)).ToArray(), 2);
-
-				var box = x_cat.narrow(1, 0, reg_max * 4);
-				var cls = x_cat.narrow(1, reg_max * 4, no - reg_max * 4);
-
-				var dbox = dist2bbox(dfl.forward(box), anchors[0].unsqueeze(0), xywh: true, dim: 1) * strides[0];
-				var y = torch.cat(new[] { dbox, cls.sigmoid() }, 1);
-
-				return export ? new[] { y } : new[] { y, x[0] };
 			}
 
 			//Decode predicted bounding boxes and class probabilities based on multiple-level feature maps.
 			private Tensor _inference(Tensor[] x)
 			{
 				long[] shape = x[0].shape;  // BCHW
-											//x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+
 				List<Tensor> xi_mix = new List<Tensor>();
 				foreach (var xi in x)
 				{
@@ -673,7 +654,7 @@ namespace YoloSharp
 				}
 				Tensor x_cat = torch.cat(xi_mix, 2);
 
-				if (this.dynamic || this.shape != shape)
+				if (this.shape != shape)
 				{
 					var (anchors, strides) = make_anchors(x, this.stride, 0.5f);
 					this.anchors = anchors.transpose(0, 1);
@@ -685,16 +666,13 @@ namespace YoloSharp
 				Tensor box = box_cls[0];
 				Tensor cls = box_cls[1];
 				Tensor dbox = decode_bboxes(this.dfl.forward(box), this.anchors.unsqueeze(0)) * this.strides;
-
-				return torch.cat([dbox, cls.sigmoid()], 1);
-
+				return  torch.cat([dbox, cls.sigmoid()], 1);
 			}
 
 			// Decode bounding boxes.
 			private Tensor decode_bboxes(Tensor bboxes, Tensor anchors)
 			{
-
-				return dist2bbox(bboxes, anchors, xywh: !this.end2end, dim: 1);
+				return dist2bbox(bboxes, anchors, xywh: true, dim: 1);
 			}
 
 			// Transform distance(ltrb) to box(xywh or xyxy).

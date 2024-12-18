@@ -186,7 +186,7 @@ namespace YoloSharp
 						}
 					case YoloSize.x:
 						{
-							depth_multiple = 1.34f;
+							depth_multiple = 1.0f;
 							width_multiple = 1.25f;
 							break;
 						}
@@ -210,9 +210,9 @@ namespace YoloSharp
 					new C2f((int)(256 * width_multiple), (int)(256 * width_multiple), (int)(6 * depth_multiple), true),
 					new Conv((int)(256 * width_multiple), (int)(512 * width_multiple), 3, 2),                           // 5-P4/16
 					new C2f((int)(512 * width_multiple), (int)(512 * width_multiple), (int)(6 * depth_multiple), true),
-					new Conv((int)(512 * width_multiple), (int)(1024 * width_multiple), 3, 2),                          // 7-P5/32
-					new C2f((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(6 * depth_multiple), true),
-					new SPPF((int)(1024 * width_multiple), (int)(1024 * width_multiple), 5),                            // 9
+					new Conv((int)(512 * width_multiple), (int)(1024 * width_multiple), 3, 2),							 // 7-P5/32
+					new C2f((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(3 * depth_multiple), true),
+					new SPPF((int)(1024 * width_multiple), (int)(1024 * width_multiple), 5),						     // 9
 
 					// head:
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
@@ -231,11 +231,9 @@ namespace YoloSharp
 					new Concat(),                                                                                       // cat head P5
 					new C2f((int)(1536 * width_multiple), (int)(1024 * width_multiple), (int)(3 * depth_multiple)),     // 21 (P5/32-large)
 
-					new Yolov8Detect(nc, ch)                                                                       // Detect(P3, P4, P5)
-				);
-
+					new Yolov8Detect(nc, ch)                                                                            // Detect(P3, P4, P5)
+					);
 				RegisterComponents();
-
 			}
 
 			public override Tensor[] forward(Tensor x)
@@ -268,7 +266,7 @@ namespace YoloSharp
 				// Fourth block
 				x = ((Module<Tensor, Tensor>)model[19]).forward(p18);
 				x = ((Module<Tensor[], Tensor>)model[20]).forward([x, outputs[2]]); // Concat with P5
-				var p21 = ((Module<Tensor, Tensor>)model[17]).forward(x);
+				var p21 = ((Module<Tensor, Tensor>)model[21]).forward(x);
 
 				var list = ((Module<Tensor[], Tensor[]>)model[22]).forward([p15, p18, p21]);
 				return list;
@@ -407,7 +405,7 @@ namespace YoloSharp
 
 				var lll = yolov8Detect.forward([p16, p19, p22]);
 
-				Loss.v8DetectionLoss v8DetectionLoss = new Loss.v8DetectionLoss(this.strides);
+				Loss.Yolov8DetectionLoss v8DetectionLoss = new Loss.Yolov8DetectionLoss();
 
 				return list;
 			}
@@ -423,6 +421,8 @@ namespace YoloSharp
 
 
 		}
+
+
 
 	}
 }
