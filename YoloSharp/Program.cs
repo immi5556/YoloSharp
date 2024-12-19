@@ -21,13 +21,13 @@ namespace YoloSharp
 
 		static void Main(string[] args)
 		{
-			//Train();
+			Train();
 			ImagePredict();
 		}
 
 		private static void Train()
 		{
-			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: false);
+			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
 			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
 			//Loss.Yolov5DetectionLoss loss = new Loss.Yolov5DetectionLoss(sortCount).to(device);
 			Loss.Yolov8DetectionLoss loss = new Loss.Yolov8DetectionLoss(sortCount).to(device);
@@ -93,8 +93,8 @@ namespace YoloSharp
 
 		private static void ImagePredict()
 		{
-			int predictIndex = 10;
-			float PredictThreshold = 0.1f;
+			int predictIndex = 28;
+			float PredictThreshold = 0.25f;
 			float IouThreshold = 0.5f;
 
 			YoloDataset yoloDataset = new YoloDataset(dataPath, useMosaic: false);
@@ -102,15 +102,14 @@ namespace YoloSharp
 			//yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
 			yolo.to(device, scalarType);
 
-
 			yolo.load(@"result/best.bin");
-			//yolo.load(@"yolov8n.bin");
 			yolo.eval();
 
 			Tensor[] tensors = yolo.forward(input);
 
 			// You should selet correct Predictor: Predict.Yolov5Predict or Predict.Yolov8Predict 
-			Predict.Yolov8Predict predict = new Predict.Yolov8Predict();
+			Predict.Yolov5Predict predict = new Predict.Yolov5Predict();	
+			//Predict.Yolov8Predict predict = new Predict.Yolov8Predict();
 			var results = predict.Predict(tensors[0]);
 
 			Tensor orgImg = (input.squeeze(0) * 255).@byte().cpu();

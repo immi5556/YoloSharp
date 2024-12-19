@@ -68,39 +68,49 @@ namespace YoloSharp
 						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
 						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
 
-				int[] ch = [(int)(256 * width_multiple), (int)(512 * width_multiple), (int)(1024 * width_multiple)];
+				int widthSize64 = (int)(64 * width_multiple);
+				int widthSize128 = (int)(128 * width_multiple);
+				int widthSize256 = (int)(256 * width_multiple);
+				int widthSize512 = (int)(512 * width_multiple);
+				int widthSize1024 = (int)(1024 * width_multiple);
+				int depthSize3 = (int)(3 * depth_multiple);
+				int depthSize6 = (int)(6 * depth_multiple);
+				int depthSize9 = (int)(9 * depth_multiple);
+
+
+				int[] ch = [widthSize256, widthSize512, widthSize1024];
 
 				model = ModuleList<Module>(
 					// backbone:
-					new Conv(3, (int)(64 * width_multiple), 6, 2, 2),                                           // 0-P1/2
-					new Conv((int)(64 * width_multiple), (int)(128 * width_multiple), 3, 2),                    // 1-P2/4
-					new C3((int)(128 * width_multiple), (int)(128 * width_multiple), (int)(3 * depth_multiple)),
-					new Conv((int)(128 * width_multiple), (int)(256 * width_multiple), 3, 2),                   // 3-P3/8
-					new C3((int)(256 * width_multiple), (int)(256 * width_multiple), (int)(6 * depth_multiple)),
-					new Conv((int)(256 * width_multiple), (int)(512 * width_multiple), 3, 2),                   // 5-P4/16
-					new C3((int)(512 * width_multiple), (int)(512 * width_multiple), (int)(9 * depth_multiple)),
-					new Conv((int)(512 * width_multiple), (int)(1024 * width_multiple), 3, 2),                  // 7-P5/32
-					new C3((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(3 * depth_multiple)),
-					new SPPF((int)(1024 * width_multiple), (int)(1024 * width_multiple), 5),
+					new Conv(3, widthSize64, 6, 2, 2),                                           // 0-P1/2
+					new Conv(widthSize64, widthSize128, 3, 2),                    // 1-P2/4
+					new C3(widthSize128, widthSize128, depthSize3),
+					new Conv(widthSize128, widthSize256, 3, 2),                   // 3-P3/8
+					new C3(widthSize256, widthSize256, depthSize6),
+					new Conv(widthSize256, widthSize512, 3, 2),                   // 5-P4/16
+					new C3(widthSize512, widthSize512, depthSize9),
+					new Conv(widthSize512, widthSize1024, 3, 2),                  // 7-P5/32
+					new C3(widthSize1024, widthSize1024, depthSize3),
+					new SPPF(widthSize1024, widthSize1024, 5),
 
 					// head:
-					new Conv((int)(1024 * width_multiple), (int)(512 * width_multiple), 1, 1),
+					new Conv(widthSize1024, widthSize512, 1, 1),
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P4
-					new C3((int)(1024 * width_multiple), (int)(512 * width_multiple), (int)(3 * depth_multiple), false),    // 13
+					new C3(widthSize1024, widthSize512, depthSize3, false),    // 13
 
-					new Conv((int)(512 * width_multiple), (int)(256 * width_multiple), 1, 1),
+					new Conv(widthSize512, widthSize256, 1, 1),
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P3
-					new C3((int)(512 * width_multiple), (int)(256 * width_multiple), (int)(3 * depth_multiple), false),      // 17 (P3/8-small)
+					new C3(widthSize512, widthSize256, depthSize3, false),      // 17 (P3/8-small)
 
-					new Conv((int)(256 * width_multiple), (int)(256 * width_multiple), 3, 2),
+					new Conv(widthSize256, widthSize256, 3, 2),
 					new Concat(),                                                                               // cat head P4
-					new C3((int)(512 * width_multiple), (int)(512 * width_multiple), (int)(3 * depth_multiple), false),      // 20 (P4/16-medium)
+					new C3(widthSize512, widthSize512, depthSize3, false),      // 20 (P4/16-medium)
 
-					new Conv((int)(512 * width_multiple), (int)(512 * width_multiple), 3, 2),
+					new Conv(widthSize512, widthSize512, 3, 2),
 					new Concat(),                                                                               // cat head P5
-					new C3((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(3 * depth_multiple), false),     // 23 (P5/32-large)
+					new C3(widthSize1024, widthSize1024, depthSize3, false),     // 23 (P5/32-large)
 
 					new Yolov5Detect(nc, ch, ach)                                                               // Detect(P3, P4, P5)
 				);
@@ -157,6 +167,7 @@ namespace YoloSharp
 			{
 				float depth_multiple = 0.34f;
 				float width_multiple = 0.25f;
+				int maxSize = 1024;
 
 				switch (yoloSize)
 				{
@@ -164,30 +175,35 @@ namespace YoloSharp
 						{
 							depth_multiple = 0.34f;
 							width_multiple = 0.25f;
+							maxSize = 1024;
 							break;
 						}
 					case YoloSize.s:
 						{
 							depth_multiple = 0.34f;
 							width_multiple = 0.5f;
+							maxSize = 1024;
 							break;
 						}
 					case YoloSize.m:
 						{
 							depth_multiple = 0.67f;
 							width_multiple = 0.75f;
+							maxSize = 576;          // max size =  768 in yolo8.yaml, but it can be 576 in real yolo model and yolov8m.pt
 							break;
 						}
 					case YoloSize.l:
 						{
 							depth_multiple = 1.0f;
 							width_multiple = 1.0f;
+							maxSize = 512;
 							break;
 						}
 					case YoloSize.x:
 						{
 							depth_multiple = 1.0f;
 							width_multiple = 1.25f;
+							maxSize = 640;      // max size =  512 in yolo8.yaml, but it can be 640 in real yolo model and yolov8x.pt
 							break;
 						}
 				}
@@ -199,37 +215,46 @@ namespace YoloSharp
 						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
 						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
 
-				int[] ch = [(int)(256 * width_multiple), (int)(512 * width_multiple), (int)(1024 * width_multiple)];
+				int widthSize64 = Math.Min((int)(64 * width_multiple), maxSize);
+				int widthSize128 = Math.Min((int)(128 * width_multiple), maxSize);
+				int widthSize256 = Math.Min((int)(256 * width_multiple), maxSize);
+				int widthSize512 = Math.Min((int)(512 * width_multiple), maxSize);
+				int widthSize1024 = Math.Min((int)(1024 * width_multiple), maxSize);
+				int depthSize3 = (int)(3 * depth_multiple);
+				int depthSize6 = (int)(6 * depth_multiple);
+				int depthSize9 = (int)(9 * depth_multiple);
+
+				int[] ch = [widthSize256, widthSize512, widthSize1024];
 
 				model = ModuleList<Module>(
 					// backbone:
-					new Conv(3, (int)(64 * width_multiple), 3, 2),                                                      // 0-P1/2
-					new Conv((int)(64 * width_multiple), (int)(128 * width_multiple), 3, 2),                            // 1-P2/4
-					new C2f((int)(128 * width_multiple), (int)(128 * width_multiple), (int)(3 * depth_multiple), true),
-					new Conv((int)(128 * width_multiple), (int)(256 * width_multiple), 3, 2),                           // 3-P3/8
-					new C2f((int)(256 * width_multiple), (int)(256 * width_multiple), (int)(6 * depth_multiple), true),
-					new Conv((int)(256 * width_multiple), (int)(512 * width_multiple), 3, 2),                           // 5-P4/16
-					new C2f((int)(512 * width_multiple), (int)(512 * width_multiple), (int)(6 * depth_multiple), true),
-					new Conv((int)(512 * width_multiple), (int)(1024 * width_multiple), 3, 2),							 // 7-P5/32
-					new C2f((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(3 * depth_multiple), true),
-					new SPPF((int)(1024 * width_multiple), (int)(1024 * width_multiple), 5),						     // 9
+					new Conv(3, widthSize64, 3, 2),                                                                     // 0-P1/2
+					new Conv(widthSize64, widthSize128, 3, 2),                                                          // 1-P2/4
+					new C2f(widthSize128, widthSize128, depthSize3, true),
+					new Conv(widthSize128, widthSize256, 3, 2),                                                         // 3-P3/8
+					new C2f(widthSize256, widthSize256, depthSize6, true),
+					new Conv(widthSize256, widthSize512, 3, 2),                                                         // 5-P4/16
+					new C2f(widthSize512, widthSize512, depthSize6, true),
+					new Conv(widthSize512, widthSize1024, 3, 2),                                                        // 7-P5/32
+					new C2f(widthSize1024, widthSize1024, depthSize3, true),
+					new SPPF(widthSize1024, widthSize1024, 5),                                                      // 9
 
 					// head:
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
-					new C2f((int)(1536 * width_multiple), (int)(512 * width_multiple), (int)(3 * depth_multiple)),      // 12
+					new C2f(widthSize512 + widthSize1024, widthSize512, depthSize3),                                    // 12
 
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
-					new C2f((int)(768 * width_multiple), (int)(256 * width_multiple), (int)(3 * depth_multiple)),       // 15 (P3/8-small)
+					new C2f(widthSize256 + widthSize512, widthSize256, depthSize3),                                     // 15 (P3/8-small)
 
-					new Conv((int)(256 * width_multiple), (int)(256 * width_multiple), 3, 2),
+					new Conv(widthSize256, widthSize256, 3, 2),
 					new Concat(),                                                                                       // cat head P4
-					new C2f((int)(768 * width_multiple), (int)(512 * width_multiple), (int)(3 * depth_multiple)),       // 18 (P4/16-medium)
+					new C2f(widthSize256 + widthSize512, widthSize512, depthSize3),                                    // 18 (P4/16-medium)
 
-					new Conv((int)(512 * width_multiple), (int)(512 * width_multiple), 3, 2),
+					new Conv(widthSize512, widthSize512, 3, 2),
 					new Concat(),                                                                                       // cat head P5
-					new C2f((int)(1536 * width_multiple), (int)(1024 * width_multiple), (int)(3 * depth_multiple)),     // 21 (P5/32-large)
+					new C2f(widthSize1024 + widthSize512, widthSize1024, depthSize3),                                  // 21 (P5/32-large)
 
 					new Yolov8Detect(nc, ch)                                                                            // Detect(P3, P4, P5)
 					);
