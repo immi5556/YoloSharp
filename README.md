@@ -19,7 +19,8 @@ You can download yolov5 pre-trained models here.
 
 | model | n| s | m | l | x |
 | --- | ----------- | ----------- | ----------- | ----------- | ----------- |
-| yolov5 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.1/Yolov5x.bin) |
+| yolov5 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5x.bin) |
+| yolov8 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8x.bin) |
 
 For example:
 
