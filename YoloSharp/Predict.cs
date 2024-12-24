@@ -144,7 +144,7 @@ namespace YoloSharp
 			}
 		}
 
-		public class Yolov8Predict
+		public class Yolov8Predict : Modules
 		{
 			private readonly float PredictThreshold = 0.25f;
 			private readonly float IouThreshold = 0.5f;

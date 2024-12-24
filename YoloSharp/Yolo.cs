@@ -167,7 +167,7 @@ namespace YoloSharp
 			{
 				float depth_multiple = 0.34f;
 				float width_multiple = 0.25f;
-				int maxSize = 1024;
+				int max_channels = 1024;
 
 				switch (yoloSize)
 				{
@@ -175,35 +175,35 @@ namespace YoloSharp
 						{
 							depth_multiple = 0.34f;
 							width_multiple = 0.25f;
-							maxSize = 1024;
+							max_channels = 1024;
 							break;
 						}
 					case YoloSize.s:
 						{
 							depth_multiple = 0.34f;
 							width_multiple = 0.5f;
-							maxSize = 1024;
+							max_channels = 1024;
 							break;
 						}
 					case YoloSize.m:
 						{
 							depth_multiple = 0.67f;
 							width_multiple = 0.75f;
-							maxSize = 576;          // max size =  768 in yolo8.yaml, but it can be 576 in real yolo model and yolov8m.pt
+							max_channels = 576;          // max size =  768 in yolo8.yaml, but it can be 576 in real yolo model and yolov8m.pt
 							break;
 						}
 					case YoloSize.l:
 						{
 							depth_multiple = 1.0f;
 							width_multiple = 1.0f;
-							maxSize = 512;
+							max_channels = 512;
 							break;
 						}
 					case YoloSize.x:
 						{
 							depth_multiple = 1.0f;
 							width_multiple = 1.25f;
-							maxSize = 640;      // max size =  512 in yolo8.yaml, but it can be 640 in real yolo model and yolov8x.pt
+							max_channels = 640;      // max size =  512 in yolo8.yaml, but it can be 640 in real yolo model and yolov8x.pt
 							break;
 						}
 				}
@@ -215,11 +215,11 @@ namespace YoloSharp
 						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
 						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
 
-				int widthSize64 = Math.Min((int)(64 * width_multiple), maxSize);
-				int widthSize128 = Math.Min((int)(128 * width_multiple), maxSize);
-				int widthSize256 = Math.Min((int)(256 * width_multiple), maxSize);
-				int widthSize512 = Math.Min((int)(512 * width_multiple), maxSize);
-				int widthSize1024 = Math.Min((int)(1024 * width_multiple), maxSize);
+				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
+				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
+				int widthSize256 = Math.Min((int)(256 * width_multiple), max_channels);
+				int widthSize512 = Math.Min((int)(512 * width_multiple), max_channels);
+				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
 				int depthSize3 = (int)(3 * depth_multiple);
 				int depthSize6 = (int)(6 * depth_multiple);
 				int depthSize9 = (int)(9 * depth_multiple);
@@ -237,7 +237,7 @@ namespace YoloSharp
 					new C2f(widthSize512, widthSize512, depthSize6, true),
 					new Conv(widthSize512, widthSize1024, 3, 2),                                                        // 7-P5/32
 					new C2f(widthSize1024, widthSize1024, depthSize3, true),
-					new SPPF(widthSize1024, widthSize1024, 5),                                                      // 9
+					new SPPF(widthSize1024, widthSize1024, 5),                                                          // 9
 
 					// head:
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
@@ -301,16 +301,15 @@ namespace YoloSharp
 
 		public class Yolov11 : Module<Tensor, Tensor[]>
 		{
-			private readonly Sequential backbone;
-			private readonly ModuleList<Module<Tensor, Tensor>> head;
-			private readonly Yolov5Detect dect;
-			private readonly Yolov8Detect yolov8Detect;
+			ModuleList<Module> model;
 			private int[] strides;
 
 			public Yolov11(int nc = 80, YoloSize yoloSize = YoloSize.n) : base("Yolov11")
 			{
 				float depth_multiple = 0.5f;
 				float width_multiple = 0.25f;
+				int max_channels = 1024;
+				bool useC3k = false;
 
 				switch (yoloSize)
 				{
@@ -318,30 +317,40 @@ namespace YoloSharp
 						{
 							depth_multiple = 0.5f;
 							width_multiple = 0.25f;
+							max_channels = 1024;
+							useC3k = false;
 							break;
 						}
 					case YoloSize.s:
 						{
 							depth_multiple = 0.5f;
 							width_multiple = 0.5f;
+							max_channels = 1024;
+							useC3k = false;
 							break;
 						}
 					case YoloSize.m:
 						{
 							depth_multiple = 0.5f;
 							width_multiple = 1.0f;
+							max_channels = 512;
+							useC3k = true;
 							break;
 						}
 					case YoloSize.l:
 						{
 							depth_multiple = 1.0f;
 							width_multiple = 1.0f;
+							max_channels = 512;
+							useC3k = true;
 							break;
 						}
 					case YoloSize.x:
 						{
 							depth_multiple = 1.0f;
 							width_multiple = 1.5f;
+							max_channels = 768;
+							useC3k = true;
 							break;
 						}
 				}
@@ -353,56 +362,56 @@ namespace YoloSharp
 						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
 						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
 
-				int[] ch = [(int)(256 * width_multiple), (int)(512 * width_multiple), (int)(1024 * width_multiple)];
+				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
+				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
+				int widthSize256 = Math.Min((int)(256 * width_multiple), max_channels);
+				int widthSize512 = Math.Min((int)(512 * width_multiple), max_channels);
+				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
+				int depthSize2 = (int)(2 * depth_multiple);
+
+				int[] ch = [widthSize256, widthSize512, widthSize1024];
 				strides = ch;
 
-
-				backbone = Sequential(
-					new Conv(3, (int)(64 * width_multiple), 3, 2),       // 0-P1/2
-
-					new Conv((int)(64 * width_multiple), (int)(128 * width_multiple), 3, 2),        // 0-P2/4
-					new C3k2((int)(128 * width_multiple), (int)(256 * width_multiple), (int)(2 * depth_multiple), shortcut: true, e: 0.25f),
-
-					new Conv((int)(256 * width_multiple), (int)(256 * width_multiple), 3, 2),       //P3
-					new C3k2((int)(256 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple), shortcut: true, e: 0.25f),
-
-					new Conv((int)(512 * width_multiple), (int)(512 * width_multiple), 3, 2),       //P4
-					new C3k2((int)(512 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple), c3k: true, shortcut: true),
-
-					new Conv((int)(512 * width_multiple), (int)(1024 * width_multiple), 3, 2),      //P5
-					new C3k2((int)(1024 * width_multiple), (int)(1024 * width_multiple), (int)(2 * depth_multiple), c3k: true, shortcut: true),
-					new SPPF((int)(1024 * width_multiple), (int)(1024 * width_multiple), 5),
-					new C2PSA((int)(1024 * width_multiple), (int)(1024 * width_multiple))
-				);
-
-				head = new ModuleList<Module<Tensor, Tensor>>
-				{
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
-					new C3k2((int)(1536 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple),  shortcut: true),
+				model = new ModuleList<Module>(
+					new Conv(3, widthSize64, 3, 2),                                                                     // 0-P1/2
+					new Conv(widthSize64, widthSize128, 3, 2),                                                          // 1-P2/4
+					new C3k2(widthSize128, widthSize256, depthSize2, useC3k, e: 0.25f),
+					new Conv(widthSize256, widthSize256, 3, 2),                                                         // 3-P3/8
+					new C3k2(widthSize256, widthSize512, depthSize2, useC3k, e: 0.25f),
+					new Conv(widthSize512, widthSize512, 3, 2),                                                         // 5-P4/16
+					new C3k2(widthSize512, widthSize512, depthSize2, c3k: true),
+					new Conv(widthSize512, widthSize1024, 3, 2),                                                        // 7-P5/32
+					new C3k2(widthSize1024, widthSize1024, depthSize2, c3k: true),
+					new SPPF(widthSize1024, widthSize1024, 5),                                                          // 9
+					new C2PSA(widthSize1024, widthSize1024, depthSize2),                                                //10
 
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
-					new C3k2((int)(1024 * width_multiple), (int)(256 * width_multiple), (int)(2 * depth_multiple),  shortcut: true),
+					new Concat(),																						// cat backbone P4
+					new C3k2(widthSize1024 + widthSize512, widthSize512, depthSize2, useC3k),                           // 13
 
-					new Conv((int)(256 * width_multiple), (int)(256 * width_multiple), 3, 2),
-					new C3k2((int)(768 * width_multiple), (int)(512 * width_multiple), (int)(2 * depth_multiple),  shortcut: true),
+					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					new Concat(),																						// cat backbone P3
+					new C3k2(widthSize512 + widthSize512, widthSize256, depthSize2, useC3k),                            // 16 (P3/8-small)
 
-					new Conv((int)(512 * width_multiple), (int)(512 * width_multiple), 3, 2),
-					new C3k2((int)(1536 * width_multiple), (int)(1024 * width_multiple), (int)(2 * depth_multiple), c3k:true, shortcut: true),
-				};
+					new Conv(widthSize256, widthSize256, 3, 2),
+					new Concat(),                                                                                       // cat head P4
+					new C3k2(widthSize512 + widthSize256, widthSize512, depthSize2, useC3k),                            // 19 (P4/16-medium)
 
-				dect = new Yolov5Detect(nc, ch, ach);
-				yolov8Detect = new Yolov8Detect(nc, ch);
-				yolov8Detect.end2end = true;
+					new Conv(widthSize512, widthSize512, 3, 2),
+					new Concat(),                                                                                       // cat head P5
+					new C3k2(widthSize1024 + widthSize512, widthSize1024, depthSize2, c3k: true),                       // 22 (P5/32-large)
 
+					new Yolov8Detect(nc, ch, true)                                                                      // Detect(P3, P4, P5)
+					);
 				RegisterComponents();
 			}
 
 			public override Tensor[] forward(Tensor x)
 			{
 				List<Tensor> outputs = new List<Tensor>();
-				for (int i = 0; i < backbone.Count; i++)
+				for (int i = 0; i < 11; i++)
 				{
-					var md = ((Module<Tensor, Tensor>)backbone[i]);
+					var md = ((Module<Tensor, Tensor>)model[i]);
 					x = md.forward(x);
 					if (i == 4 || i == 6 || i == 10)
 					{
@@ -410,39 +419,27 @@ namespace YoloSharp
 					}
 				}
 
-				x = head[0].forward(x);
-				x = cat([x, outputs[1]], dim: 1);
-				Tensor p13 = head[1].forward(x);
+				x = ((Module<Tensor, Tensor>)model[11]).forward(x);
+				x = ((Module<Tensor[], Tensor>)model[12]).forward([x, outputs[1]]);
+				Tensor p13 = ((Module<Tensor, Tensor>)model[13]).forward(x);
 
-				x = head[2].forward(p13);
-				x = cat([x, outputs[0]], dim: 1);
-				Tensor p16 = head[3].forward(x);
+				x = ((Module<Tensor, Tensor>)model[14]).forward(p13);
+				x = ((Module<Tensor[], Tensor>)model[15]).forward([x, outputs[0]]);
+				Tensor p16 = ((Module<Tensor, Tensor>)model[16]).forward(x);
 
-				x = head[4].forward(p16);
-				x = cat([x, p13], dim: 1);
-				Tensor p19 = head[5].forward(x);
+				x = ((Module<Tensor, Tensor>)model[17]).forward(p16);
+				x = ((Module<Tensor[], Tensor>)model[18]).forward([x, p13]);
+				Tensor p19 = ((Module<Tensor, Tensor>)model[19]).forward(x);
 
-				x = head[6].forward(p19);
-				x = cat([x, outputs[2]], dim: 1);
-				Tensor p22 = head[7].forward(x);
+				x = ((Module<Tensor, Tensor>)model[20]).forward(p19);
+				x = ((Module<Tensor[], Tensor>)model[21]).forward([x, outputs[2]]);
+				Tensor p22 = ((Module<Tensor, Tensor>)model[22]).forward(x);
 
-				var list = dect.forward([p16, p19, p22]);
-
-				var lll = yolov8Detect.forward([p16, p19, p22]);
-
-				Loss.Yolov8DetectionLoss v8DetectionLoss = new Loss.Yolov8DetectionLoss();
+				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward([p16, p19, p22]);
 
 				return list;
 			}
 
-			public void Save(string path)
-			{
-				this.save(path);
-			}
-			public IEnumerable<Parameter> Parameters(bool recurse = true)
-			{
-				return this.parameters(recurse);
-			}
 
 
 		}

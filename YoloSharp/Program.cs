@@ -1,6 +1,4 @@
 ﻿using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
@@ -17,7 +15,8 @@ namespace YoloSharp
 		private static Device device = CUDA;
 		private static ScalarType scalarType = ScalarType.Float32;
 		//private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n);
-		private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.n);
+		//private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.n);
+		private static Yolo.Yolov11 yolo = new Yolo.Yolov11(sortCount, Yolo.YoloSize.n);
 
 		static void Main(string[] args)
 		{
@@ -28,10 +27,10 @@ namespace YoloSharp
 		private static void Train()
 		{
 			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
-			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 32, shuffle: true, device: device);
+			DataLoader loader = new DataLoader(yoloDataset, 8, num_worker: 0, shuffle: true, device: device);
 			//Loss.Yolov5DetectionLoss loss = new Loss.Yolov5DetectionLoss(sortCount).to(device);
 			Loss.Yolov8DetectionLoss loss = new Loss.Yolov8DetectionLoss(sortCount).to(device);
-			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov8\Yolov8n.bin");
+			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov11\Yolov11n.bin");
 			yolo.train();
 			yolo.to(device, scalarType);
 
@@ -93,44 +92,53 @@ namespace YoloSharp
 
 		private static void ImagePredict()
 		{
-			int predictIndex = 28;
-			float PredictThreshold = 0.25f;
+			float PredictThreshold = 0.9f;
 			float IouThreshold = 0.5f;
 
-			YoloDataset yoloDataset = new YoloDataset(dataPath, useMosaic: false);
-			Tensor input = yoloDataset.GetDataTensor(predictIndex).Item1.to(scalarType, device);
-			//yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5\Yolov5n.bin");
-			yolo.to(device, scalarType);
+			string orgImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
+			torchvision.io.DefaultImager = new torchvision.io.SkiaImager();
+			Tensor orgImage = torchvision.io.read_image(orgImagePath).to(scalarType, device).unsqueeze(0) / 255.0f;
+			int w = (int)orgImage.shape[3];
+			int h = (int)orgImage.shape[2];
+			int padHeight = 32 - (int)(orgImage.shape[2] % 32);
+			int padWidth = 32 - (int)(orgImage.shape[3] % 32);
 
+			padHeight = padHeight == 32 ? 0 : padHeight;
+			padWidth = padWidth == 32 ? 0 : padWidth;
+
+			Tensor input = torch.nn.functional.pad(orgImage, [0, padWidth, 0, padHeight], PaddingModes.Zeros);
+			//yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov11\Yolov11n.bin");
 			yolo.load(@"result/best.bin");
+
+			yolo.to(device, scalarType);
 			yolo.eval();
+			//yolo.train(true);
 
 			Tensor[] tensors = yolo.forward(input);
 
 			// You should selet correct Predictor: Predict.Yolov5Predict or Predict.Yolov8Predict 
-			Predict.Yolov5Predict predict = new Predict.Yolov5Predict();	
-			//Predict.Yolov8Predict predict = new Predict.Yolov8Predict();
+			//Predict.Yolov5Predict predict = new Predict.Yolov5Predict();	
+			Predict.Yolov8Predict predict = new Predict.Yolov8Predict(PredictThreshold, IouThreshold);
 			var results = predict.Predict(tensors[0]);
 
-			Tensor orgImg = (input.squeeze(0) * 255).@byte().cpu();
-			orgImg = orgImg.index_select(0, tensor(new long[] { 2, 1, 0 }));
-			orgImg = orgImg.permute([1, 2, 0]).contiguous();
-			Bitmap bitmap = new Bitmap((int)orgImg.shape[1], (int)orgImg.shape[0]);
-			BitmapData bitmapData = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
-			Marshal.Copy(orgImg.bytes.ToArray(), 0, bitmapData.Scan0, bitmapData.Stride * bitmapData.Height);
-			bitmap.UnlockBits(bitmapData);
-
+			Bitmap bitmap = new Bitmap(orgImagePath);
 			Graphics g = Graphics.FromImage(bitmap);
 			foreach (var result in results)
 			{
 				Point point = new Point(result.x - result.w / 2, result.y - result.h / 2);
 				Rectangle rect = new Rectangle(point, new System.Drawing.Size(result.w, result.h));
 				string str = string.Format("Sort:{0}, Score:{1:F1}%", result.sort, result.score * 100);
+				Console.WriteLine(str);
 				g.DrawRectangle(Pens.Red, rect);
 				g.DrawString(str, new Font(FontFamily.GenericMonospace, 10), new SolidBrush(Color.Red), point);
 			}
 			g.Save();
-			bitmap.Save("bitmap.jpg");
+			bitmap.Save("result.jpg");
+
+			Console.WriteLine();
+			Console.WriteLine("Predict done");
+
+
 		}
 
 	}

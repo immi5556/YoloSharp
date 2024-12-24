@@ -14,4 +14,8 @@
     <PackageReference Include="TorchVision" Version="0.105.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Assets\models\Yolov11\" />
+  </ItemGroup>
+
 </Project>

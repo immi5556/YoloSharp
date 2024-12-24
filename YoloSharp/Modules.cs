@@ -29,22 +29,9 @@ namespace YoloSharp
 				RegisterComponents();
 			}
 
-			public Conv(int in_channels, int out_channels, (long, long) kernel_size, (long, long) stride, (long, long)? padding = null, int groups = 1, bool bias = true, bool act = true) : base("Conv")
-			{
-				if (padding == null)
-				{
-					padding = (kernel_size.Item1 / 2, kernel_size.Item2 / 2);
-				}
-
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value, bias: bias);
-				bn = BatchNorm2d(out_channels, eps: eps, momentum: momentum);
-				this.act = act;
-				RegisterComponents();
-			}
-
 			public override Tensor forward(Tensor input)
 			{
-				Module<Tensor, Tensor> ac = act ? SiLU(inplace: true) : Identity();
+				Module<Tensor, Tensor> ac = act ? SiLU(true) : Identity();
 				return ac.forward(bn.forward(conv.forward(input)));
 			}
 		}
@@ -55,11 +42,11 @@ namespace YoloSharp
 			private readonly BatchNorm2d bn;
 			private readonly bool act;
 
-			public DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true) : base("DWConv")
+			public DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true, bool bias = false) : base("DWConv")
 			{
 				int groups = (int)BigInteger.GreatestCommonDivisor(in_channels, out_channels);
 				int padding = (kernel_size) / 2;
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups: groups, dilation: d);
+				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups: groups, dilation: d, bias: bias);
 				bn = BatchNorm2d(out_channels);
 				this.act = act;
 				RegisterComponents();
@@ -84,15 +71,6 @@ namespace YoloSharp
 				int c = (int)(outChannels * e);
 				cv1 = new Conv(inChannels, c, kernal.Item1, 1);
 				cv2 = new Conv(c, outChannels, kernal.Item2, 1, groups: groups);
-				add = shortcut && inChannels == outChannels;
-				RegisterComponents();
-			}
-
-			public Bottleneck(int inChannels, int outChannels, ((int, int), (int, int)) kernal, bool shortcut = true, int groups = 1, float e = 0.5f) : base("bottleneck")
-			{
-				int c = (int)(outChannels * e);
-				cv1 = new Conv(inChannels, c, kernal.Item1, (1, 1));
-				cv2 = new Conv(c, outChannels, kernal.Item2, (1, 1), groups: groups);
 				add = shortcut && inChannels == outChannels;
 				RegisterComponents();
 			}
@@ -158,10 +136,11 @@ namespace YoloSharp
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
+			public readonly int c;
 			public Sequential m = Sequential();
 			public C2f(int inChannels, int outChannels, int n = 1, bool shortcut = false, int groups = 1, float e = 0.5f) : base("C2f")
 			{
-				int c = (int)(outChannels * e);
+				this.c = (int)(outChannels * e);
 				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
 				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
 				for (int i = 0; i < n; i++)
@@ -182,12 +161,14 @@ namespace YoloSharp
 			}
 		}
 
+
+
 		public class C3k2 : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
 			public Sequential m = Sequential();
-			public C3k2(int inChannels, int outChannels, int n = 1, bool c3k = false, bool shortcut = false, int groups = 1, float e = 0.5f, int k = 3) : base("C3k2")
+			public C3k2(int inChannels, int outChannels, int n = 1, bool c3k = false, float e = 0.5f, int groups = 1, bool shortcut = true) : base("C3k2")
 			{
 				int c = (int)(outChannels * e);
 				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
@@ -196,12 +177,11 @@ namespace YoloSharp
 				{
 					if (c3k)
 					{
-						this.m = this.m.append(new C3k(c, c, 2, shortcut, groups, e));
+						this.m = this.m.append(new C3k(c, c, 2, shortcut, groups));
 					}
 					else
 					{
-
-						this.m = this.m.append(new Bottleneck(c, c, (k, k), shortcut, groups, e));
+						this.m = this.m.append(new Bottleneck(c, c, (3, 3), shortcut, groups));
 					}
 				}
 				RegisterComponents();
@@ -272,7 +252,8 @@ namespace YoloSharp
 				Tensor a = ab[0];
 				Tensor b = ab[1];
 				b = this.m.forward(b);
-				return this.cv2.forward(torch.cat([a, b], 1));
+				Tensor result = this.cv2.forward(torch.cat([a, b], 1));
+				return result;
 			}
 		}
 
@@ -336,9 +317,7 @@ namespace YoloSharp
 
 				Tensor qkv = this.qkv.forward(x);
 
-				Tensor[] qkv_mix = qkv.view(B, this.num_heads, this.key_dim * 2 + this.head_dim, N).split(
-					[this.key_dim, this.key_dim, this.head_dim], dim: 2
-				);
+				Tensor[] qkv_mix = qkv.view(B, this.num_heads, this.key_dim * 2 + this.head_dim, N).split([this.key_dim, this.key_dim, this.head_dim], dim: 2);
 				Tensor q = qkv_mix[0];
 				Tensor k = qkv_mix[1];
 				Tensor v = qkv_mix[2];
@@ -586,7 +565,6 @@ namespace YoloSharp
 
 		public class Yolov8Detect : Module<Tensor[], Tensor[]>
 		{
-			internal bool end2end = false; // end2end
 			private int max_det = 300; // max_det
 			private long[] shape = null;
 			private Tensor anchors = torch.empty(0); // init
@@ -601,9 +579,8 @@ namespace YoloSharp
 			private readonly ModuleList<Sequential> cv3 = new ModuleList<Sequential>();
 			private readonly Module<Tensor, Tensor> dfl;
 
-			public Yolov8Detect(int nc, int[] ch, bool end2end = true) : base("Yolov8Detect")
+			public Yolov8Detect(int nc, int[] ch, bool legacy = false) : base("Yolov8Detect")
 			{
-				this.end2end = end2end;
 				this.nc = nc; // number of classes
 				this.nl = ch.Length;// number of detection layers
 				this.reg_max = 16; // DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
@@ -616,7 +593,15 @@ namespace YoloSharp
 				foreach (int x in ch)
 				{
 					cv2.append(Sequential(new Conv(x, c2, 3), new Conv(c2, c2, 3), nn.Conv2d(c2, 4 * this.reg_max, 1)));
-					cv3.append(nn.Sequential(new Conv(x, c3, 3), new Conv(c3, c3, 3), nn.Conv2d(c3, this.nc, 1)));
+
+					if (legacy)
+					{
+						cv3.append(Sequential( Sequential(new DWConv(x, x, 3), new Conv(x, c3, 1)), Sequential(new DWConv(c3, c3, 3), new Conv(c3, c3, 1)), nn.Conv2d(c3, this.nc, 1)));
+					}
+					else
+					{
+						cv3.append(Sequential(new Conv(x, c3, 3), new Conv(c3, c3, 3), nn.Conv2d(c3, this.nc, 1)));
+					}
 				}
 
 				this.dfl = this.reg_max > 1 ? new DFL(this.reg_max) : nn.Identity();
@@ -627,7 +612,7 @@ namespace YoloSharp
 			{
 				for (int i = 0; i < nl; i++)
 				{
-					x[i] = torch.cat(new[] { cv2[i].forward(x[i]), cv3[i].forward(x[i]) }, 1);
+					x[i] = torch.cat([cv2[i].forward(x[i]), cv3[i].forward(x[i])], 1);
 				}
 
 				if (training)
@@ -636,7 +621,6 @@ namespace YoloSharp
 				}
 				else
 				{
-					var shape = x[0].shape; // BCHW
 					Tensor y = _inference(x);
 					return new Tensor[] { y }.Concat(x).ToArray();
 				}
@@ -666,7 +650,7 @@ namespace YoloSharp
 				Tensor box = box_cls[0];
 				Tensor cls = box_cls[1];
 				Tensor dbox = decode_bboxes(this.dfl.forward(box), this.anchors.unsqueeze(0)) * this.strides;
-				return  torch.cat([dbox, cls.sigmoid()], 1);
+				return torch.cat([dbox, cls.sigmoid()], 1);
 			}
 
 			// Decode bounding boxes.
@@ -713,34 +697,6 @@ namespace YoloSharp
 					stride_tensor.Add(torch.full([h * w, 1], strides[i], dtype: dtype, device: device));
 				}
 				return (torch.cat(anchor_points), torch.cat(stride_tensor));
-			}
-
-			private Tensor postprocess(Tensor preds, int max_det, int nc = 80)
-			{
-				//	Post-processes YOLO model predictions.
-				//	Args:
-				//		preds (torch.Tensor): Raw predictions with shape (batch_size, num_anchors, 4 + nc) with last dimension
-				//			format [x, y, w, h, class_probs].
-				//		max_det (int): Maximum detections per image.
-				//		nc (int, optional): Number of classes. Default: 80.
-				//	Returns:
-				//		(torch.Tensor): Processed predictions with shape (batch_size, min(max_det, num_anchors), 6) and last
-				//			dimension format [x, y, w, h, max_class_prob, class_index].
-
-
-				long batch_size = preds.shape[0];  // i.e. shape(16,8400,84)
-				int anchors = (int)preds.shape[1];
-				Tensor[] boxes_scores = preds.split([4, nc], dim: -1);
-				Tensor boxes = boxes_scores[0];
-				Tensor scores = boxes_scores[1];
-
-				Tensor index = scores.amax(-1).topk(Math.Min(max_det, anchors)).indexes.unsqueeze(-1);
-				boxes = boxes.gather(dim: 1, index: index.repeat(1, 1, 4));
-				scores = scores.gather(dim: 1, index: index.repeat(1, 1, nc));
-				(scores, index) = scores.flatten(1).topk(Math.Min(max_det, anchors));
-
-				Tensor i = torch.arange(batch_size)[TensorIndex.Ellipsis, TensorIndex.None]; // batch indices
-				return torch.cat([boxes[i, index / nc], scores[TensorIndex.Ellipsis, TensorIndex.None], (index % nc)[TensorIndex.Ellipsis, TensorIndex.None].@float()], dim: -1);
 			}
 
 		}
