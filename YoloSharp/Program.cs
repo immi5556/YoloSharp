@@ -15,8 +15,9 @@ namespace YoloSharp
 		private static Device device = CUDA;
 		private static ScalarType scalarType = ScalarType.Float32;
 		//private static Yolo.Yolov5 yolo = new Yolo.Yolov5(sortCount, Yolo.YoloSize.n);
+		private static Yolo.Yolov5u yolo = new Yolo.Yolov5u(sortCount, Yolo.YoloSize.n);
 		//private static Yolo.Yolov8 yolo = new Yolo.Yolov8(sortCount, Yolo.YoloSize.n);
-		private static Yolo.Yolov11 yolo = new Yolo.Yolov11(sortCount, Yolo.YoloSize.n);
+		//private static Yolo.Yolov11 yolo = new Yolo.Yolov11(sortCount, Yolo.YoloSize.n);
 
 		static void Main(string[] args)
 		{
@@ -24,13 +25,14 @@ namespace YoloSharp
 			ImagePredict();
 		}
 
+
 		private static void Train()
 		{
 			YoloDataset yoloDataset = new YoloDataset(dataPath, imageSize, deviceType: device.type, useMosaic: true);
-			DataLoader loader = new DataLoader(yoloDataset, 8, num_worker: 0, shuffle: true, device: device);
+			DataLoader loader = new DataLoader(yoloDataset, 16, num_worker: 0, shuffle: true, device: device);
 			//Loss.Yolov5DetectionLoss loss = new Loss.Yolov5DetectionLoss(sortCount).to(device);
 			Loss.Yolov8DetectionLoss loss = new Loss.Yolov8DetectionLoss(sortCount).to(device);
-			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov11\Yolov11n.bin");
+			yolo.to(ScalarType.Float32).load(@"..\..\..\Assets\models\Yolov5u\Yolov5nu.bin");
 			yolo.train();
 			yolo.to(device, scalarType);
 
@@ -92,10 +94,10 @@ namespace YoloSharp
 
 		private static void ImagePredict()
 		{
-			float PredictThreshold = 0.9f;
+			float PredictThreshold = 0.3f;
 			float IouThreshold = 0.5f;
 
-			string orgImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
+			string orgImagePath = @"..\..\..\Assets\TestImage\zidane.jpg";
 			torchvision.io.DefaultImager = new torchvision.io.SkiaImager();
 			Tensor orgImage = torchvision.io.read_image(orgImagePath).to(scalarType, device).unsqueeze(0) / 255.0f;
 			int w = (int)orgImage.shape[3];

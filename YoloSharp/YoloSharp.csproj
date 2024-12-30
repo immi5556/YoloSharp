@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Folder Include="Assets\models\Yolov11\" />
+    <Folder Include="Assets\models\Yolov5u\" />
   </ItemGroup>
 
 </Project>
