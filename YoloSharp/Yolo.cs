@@ -16,7 +16,6 @@ namespace YoloSharp
 			x,
 		}
 
-
 		public class Yolov5 : Module<Tensor, Tensor[]>
 		{
 			private readonly ModuleList<Module> model;
@@ -120,6 +119,7 @@ namespace YoloSharp
 
 			public override Tensor[] forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				List<Tensor> outputs = new List<Tensor>();
 				for (int i = 0; i < 10; i++)
 				{
@@ -153,6 +153,10 @@ namespace YoloSharp
 				var p5_out = ((Module<Tensor, Tensor>)model[23]).call(x);
 
 				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward([p3_out, p4_out, p5_out]);
+				for (int i = 0; i < list.Length; i++)
+				{
+					list[i] = list[i].MoveToOuterDisposeScope();
+				}
 				return list;
 
 			}
@@ -254,7 +258,7 @@ namespace YoloSharp
 					new Concat(),                                                                               // cat head P5
 					new C3(widthSize1024, widthSize1024, depthSize3, false),     // 23 (P5/32-large)
 
-					new Yolov8Detect(nc, ch)                                                               // Detect(P3, P4, P5)
+					new YolovDetect(nc, ch)                                                               // Detect(P3, P4, P5)
 				);
 				RegisterComponents();
 
@@ -262,6 +266,7 @@ namespace YoloSharp
 
 			public override Tensor[] forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				List<Tensor> outputs = new List<Tensor>();
 				for (int i = 0; i < 10; i++)
 				{
@@ -295,6 +300,10 @@ namespace YoloSharp
 				var p5_out = ((Module<Tensor, Tensor>)model[23]).call(x);
 
 				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward([p3_out, p4_out, p5_out]);
+				for (int i = 0; i < list.Length; i++)
+				{
+					list[i] = list[i].MoveToOuterDisposeScope();
+				}
 				return list;
 
 			}
@@ -398,13 +407,14 @@ namespace YoloSharp
 					new Concat(),                                                                                       // cat head P5
 					new C2f(widthSize1024 + widthSize512, widthSize1024, depthSize3),                                  // 21 (P5/32-large)
 
-					new Yolov8Detect(nc, ch)                                                                            // Detect(P3, P4, P5)
+					new YolovDetect(nc, ch)                                                                            // Detect(P3, P4, P5)
 					);
 				RegisterComponents();
 			}
 
 			public override Tensor[] forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				List<Tensor> outputs = new List<Tensor>();
 				for (int i = 0; i < 10; i++)
 				{
@@ -436,6 +446,10 @@ namespace YoloSharp
 				var p21 = ((Module<Tensor, Tensor>)model[21]).forward(x);
 
 				var list = ((Module<Tensor[], Tensor[]>)model[22]).forward([p15, p18, p21]);
+				for (int i = 0; i < list.Length; i++)
+				{
+					list[i] = list[i].MoveToOuterDisposeScope();
+				}
 				return list;
 			}
 
@@ -528,11 +542,11 @@ namespace YoloSharp
 					new C2PSA(widthSize1024, widthSize1024, depthSize2),                                                //10
 
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
-					new Concat(),																						// cat backbone P4
+					new Concat(),                                                                                       // cat backbone P4
 					new C3k2(widthSize1024 + widthSize512, widthSize512, depthSize2, useC3k),                           // 13
 
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
-					new Concat(),																						// cat backbone P3
+					new Concat(),                                                                                       // cat backbone P3
 					new C3k2(widthSize512 + widthSize512, widthSize256, depthSize2, useC3k),                            // 16 (P3/8-small)
 
 					new Conv(widthSize256, widthSize256, 3, 2),
@@ -543,13 +557,14 @@ namespace YoloSharp
 					new Concat(),                                                                                       // cat head P5
 					new C3k2(widthSize1024 + widthSize512, widthSize1024, depthSize2, c3k: true),                       // 22 (P5/32-large)
 
-					new Yolov8Detect(nc, ch, true)                                                                      // Detect(P3, P4, P5)
+					new YolovDetect(nc, ch, true)                                                                      // Detect(P3, P4, P5)
 					);
 				RegisterComponents();
 			}
 
 			public override Tensor[] forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				List<Tensor> outputs = new List<Tensor>();
 				for (int i = 0; i < 11; i++)
 				{
@@ -578,7 +593,10 @@ namespace YoloSharp
 				Tensor p22 = ((Module<Tensor, Tensor>)model[22]).forward(x);
 
 				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward([p16, p19, p22]);
-
+				for (int i = 0; i < list.Length; i++)
+				{
+					list[i] = list[i].MoveToOuterDisposeScope();
+				}
 				return list;
 			}
 

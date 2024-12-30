@@ -66,32 +66,36 @@ namespace YoloSharp
 
 		public (Tensor, Tensor) GetTensorByLetterBox(long index)
 		{
+			using var _ = NewDisposeScope();
 			string file = imageFiles[(int)index];
 			Tensor orgImageTensor = torchvision.io.read_image(file).to(device);
 			var (imgTensor, _, _) = Letterbox(orgImageTensor, imageSize, imageSize);
 			Tensor lb = GetLetterBoxLabelTensor(index);
-			return (imgTensor.unsqueeze(0), lb.to(imgTensor.device));
+			return (imgTensor.unsqueeze(0).MoveToOuterDisposeScope(), lb.to(imgTensor.device).MoveToOuterDisposeScope());
 		}
 
 		public (Tensor, Tensor) GetTensorByMosaic(long index)
 		{
+			using var _ = NewDisposeScope();
 			var (img, lb) = load_mosaic(index);
-			return (img.unsqueeze(0), lb.to(img.device));
+			return (img.unsqueeze(0).MoveToOuterDisposeScope(), lb.to(img.device).MoveToOuterDisposeScope());
 		}
 
 		public (Tensor, Tensor) GetDataTensor(long index)
 		{
+			using var _ = NewDisposeScope();
 			var (image, label) = useMosaic ? GetTensorByMosaic(index) : GetTensorByLetterBox(index);
 			if (image.shape.Length == 3)
 			{
 				image = image.unsqueeze(0);
 			}
 			image = image / 255.0f;
-			return (image, label);
+			return (image.MoveToOuterDisposeScope(), label.MoveToOuterDisposeScope());
 		}
 
 		private (Tensor, float, int) Letterbox(Tensor image, int targetWidth, int targetHeight)
 		{
+			using var _ = NewDisposeScope();
 			// 获取图像的原始尺寸
 			int originalWidth = (int)image.shape[2];
 			int originalHeight = (int)image.shape[1];
@@ -120,11 +124,12 @@ namespace YoloSharp
 
 			GC.Collect();
 
-			return (paddedImage, scale, Math.Max(padLeft, padTop));
+			return (paddedImage.MoveToOuterDisposeScope(), scale, Math.Max(padLeft, padTop));
 		}
 
 		public Tensor GetLetterBoxLabelTensor(long index)
 		{
+			using var _ = NewDisposeScope();
 			Tensor orgImageTensor = torchvision.io.read_image(imageFiles[(int)index]);
 			var (imgTensor, scale, pad) = Letterbox(orgImageTensor, imageSize, imageSize);
 			bool isWidthLonger = orgImageTensor.shape[2] > orgImageTensor.shape[1];
@@ -158,7 +163,7 @@ namespace YoloSharp
 
 			}
 			Tensor labelTensor = tensor(labelArray);
-			return labelTensor;
+			return labelTensor.MoveToOuterDisposeScope();
 
 		}
 
@@ -169,6 +174,7 @@ namespace YoloSharp
 
 		public (Tensor, Tensor) load_mosaic(long index)
 		{
+			using var _ = NewDisposeScope();
 			int[] mosaic_border = [-320, -320];
 			long[] indexs = Sample(index, 0, (int)Count, 4);
 			Random random = new Random();
@@ -220,7 +226,7 @@ namespace YoloSharp
 			var (im, targets) = random_perspective(img4, labels4, degrees: 0, translate: 0.1f, scale: 0.5f, shear: 0, perspective: 0.0f, mosaic_border[0], mosaic_border[1]);
 
 			targets[TensorIndex.Ellipsis, 1..5] = xyxy2xywhn(targets[TensorIndex.Ellipsis, 1..5], w: (int)im.shape[1], h: (int)im.shape[2], clip: true, eps: 1e-3f);
-			return (im, targets);
+			return (im.MoveToOuterDisposeScope(), targets.MoveToOuterDisposeScope());
 		}
 
 		private Tensor ResizeImage(Tensor image, int targetWidth, int targetHeight)
@@ -271,17 +277,19 @@ namespace YoloSharp
 
 		private Tensor xywhn2xyxy(Tensor x, int w = 640, int h = 640, int padw = 0, int padh = 0)
 		{
+			using var _ = NewDisposeScope();
 			//"""Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right."""
 			Tensor y = x.clone();
 			y[TensorIndex.Ellipsis, 0] = w * (x[TensorIndex.Ellipsis, 0] - x[TensorIndex.Ellipsis, 2] / 2) + padw;  // top left x
 			y[TensorIndex.Ellipsis, 1] = h * (x[TensorIndex.Ellipsis, 1] - x[TensorIndex.Ellipsis, 3] / 2) + padh;  // top left y
 			y[TensorIndex.Ellipsis, 2] = w * (x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2] / 2) + padw;  // bottom right x
 			y[TensorIndex.Ellipsis, 3] = h * (x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3] / 2) + padh;  // bottom right y
-			return y;
+			return y.MoveToOuterDisposeScope();
 		}
 
 		private Tensor xyxy2xywhn(Tensor x, int w = 640, int h = 640, bool clip = false, float eps = 0.0f)
 		{
+			using var _ = NewDisposeScope();
 			// Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] normalized where xy1=top-left, xy2=bottom-right.
 			if (clip)
 			{
@@ -292,22 +300,24 @@ namespace YoloSharp
 			y[TensorIndex.Ellipsis, 1] = (x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3]) / 2 / h;// y center
 			y[TensorIndex.Ellipsis, 2] = (x[TensorIndex.Ellipsis, 2] - x[TensorIndex.Ellipsis, 0]) / w;  // width
 			y[TensorIndex.Ellipsis, 3] = (x[TensorIndex.Ellipsis, 3] - x[TensorIndex.Ellipsis, 1]) / h;  // height
-			return y;
+			return y.MoveToOuterDisposeScope();
 		}
 
 		private Tensor clip_boxes(Tensor boxes, float[] shape)
 		{
+			using var _ = NewDisposeScope();
 			// """Clips bounding box coordinates (xyxy) to fit within the specified image shape (height, width)."""
 
 			boxes[TensorIndex.Ellipsis, 0] = boxes[TensorIndex.Ellipsis, 0].clamp_(0, shape[1]);  // x1
 			boxes[TensorIndex.Ellipsis, 1] = boxes[TensorIndex.Ellipsis, 1].clamp_(0, shape[0]);  // y1
 			boxes[TensorIndex.Ellipsis, 2] = boxes[TensorIndex.Ellipsis, 2].clamp_(0, shape[1]);  // x2
 			boxes[TensorIndex.Ellipsis, 3] = boxes[TensorIndex.Ellipsis, 3].clamp_(0, shape[0]);  // y2
-			return boxes;
+			return boxes.MoveToOuterDisposeScope();
 		}
 
 		private Tensor GetOrgLabelTensor(long index)
 		{
+			using var _ = NewDisposeScope();
 			string labelName = GetLabelFileNameFromImageName(imageFiles[(int)index]);
 			string[] lines = File.ReadAllLines(labelName);
 
@@ -322,11 +332,12 @@ namespace YoloSharp
 				}
 			}
 			Tensor labelTensor = tensor(labelArray);
-			return labelTensor;
+			return labelTensor.MoveToOuterDisposeScope();
 		}
 
 		private (Tensor, Tensor) random_perspective(Tensor im, Tensor targets, int degrees = 10, float translate = 0.1f, float scale = 0.1f, int shear = 10, float perspective = 0.0f, int borderX = 0, int borderY = 0)
 		{
+			using var _ = NewDisposeScope();
 			Device device = im.device;
 			int height = (int)im.shape[1] + borderY * 2;
 			int width = (int)im.shape[2] + borderX * 2;
@@ -398,11 +409,12 @@ namespace YoloSharp
 				targets[TensorIndex.Ellipsis, 1..5] = newT[idx];
 			}
 
-			return (outTensor.contiguous(), targets);
+			return (outTensor.contiguous().MoveToOuterDisposeScope(), targets.MoveToOuterDisposeScope());
 		}
 
 		public static Tensor GetRotationMatrix2D(float angle, float scale)
 		{
+			using var _ = NewDisposeScope();
 			// 将角度转换为弧度
 			float theta = angle * (float)Math.PI / 180.0f;
 
@@ -417,11 +429,12 @@ namespace YoloSharp
 				{ scale * sinTheta, scale * cosTheta, 0 },
 				{ 0, 0, 1 }
 			});
-			return R;
+			return R.MoveToOuterDisposeScope();
 		}
 
 		private Tensor box_candidates(Tensor box1, Tensor box2, float wh_thr = 2, float ar_thr = 100, float area_thr = 0.1f, double eps = 1e-16)
 		{
+			using var _ = NewDisposeScope();
 			/*
 			Filters bounding box candidates by minimum width-height threshold `wh_thr` (pixels), aspect ratio threshold
 			`ar_thr`, and area ratio threshold `area_thr`.
@@ -431,7 +444,8 @@ namespace YoloSharp
 			var (w1, h1) = (box1[2] - box1[0], box1[3] - box1[1]);
 			var (w2, h2) = (box2[2] - box2[0], box2[3] - box2[1]);
 			var ar = maximum(w2 / (h2 + eps), h2 / (w2 + eps)); // aspect ratio
-			return w2 > wh_thr & h2 > wh_thr & w2 * h2 / (w1 * h1 + eps) > area_thr & ar < ar_thr; // candidates
+			Tensor result = w2 > wh_thr & h2 > wh_thr & w2 * h2 / (w1 * h1 + eps) > area_thr & ar < ar_thr; // candidates
+			return result.MoveToOuterDisposeScope();
 		}
 
 	}

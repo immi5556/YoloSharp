@@ -31,8 +31,10 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
+				using var _ = NewDisposeScope();
 				Module<Tensor, Tensor> ac = act ? SiLU(true) : Identity();
-				return ac.forward(bn.forward(conv.forward(input)));
+				Tensor result = ac.forward(bn.forward(conv.forward(input)));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -54,9 +56,11 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
+				using var _ = NewDisposeScope();
 				var x = conv.forward(input);
 				Module<Tensor, Tensor> ac = act ? SiLU() : Identity();
-				return ac.forward(bn.forward(x));
+				Tensor result = ac.forward(bn.forward(x));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -77,7 +81,9 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
-				return add ? input + cv2.forward(cv1.forward(input)) : cv2.forward(cv1.forward(input));
+				using var _ = NewDisposeScope();
+				Tensor result = add ? input + cv2.forward(cv1.forward(input)) : cv2.forward(cv1.forward(input));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -104,7 +110,9 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
-				return cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
+				using var _ = NewDisposeScope();
+				Tensor result = cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -128,7 +136,9 @@ namespace YoloSharp
 			}
 			public override Tensor forward(Tensor input)
 			{
-				return cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
+				using var _ = NewDisposeScope();
+				Tensor result = cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -152,12 +162,14 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
+				using var _ = NewDisposeScope();
 				var y = this.cv1.forward(input).chunk(2, 1).ToList();
 				for (int i = 0; i < m.Count; i++)
 				{
 					y.Add(m[i].call(y.Last()));
 				}
-				return cv2.forward(cat(y, 1));
+				Tensor result = cv2.forward(cat(y, 1));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -189,12 +201,14 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
+				using var _ = NewDisposeScope();
 				var y = this.cv1.forward(input).chunk(2, 1).ToList();
 				for (int i = 0; i < m.Count; i++)
 				{
 					y.Add(m[i].call(y.Last()));
 				}
-				return cv2.forward(cat(y, 1));
+				Tensor result = cv2.forward(cat(y, 1));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -215,10 +229,12 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
+				using var _ = NewDisposeScope();
 				var x = cv1.forward(input);
 				var y1 = m.forward(x);
 				var y2 = m.forward(y1);
-				return cv2.forward(cat(new[] { x, y1, y2, m.forward(y2) }, 1));
+				Tensor result = cv2.forward(cat(new[] { x, y1, y2, m.forward(y2) }, 1));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -248,12 +264,13 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				Tensor[] ab = this.cv1.forward(x).split([this.c, this.c], dim: 1);
 				Tensor a = ab[0];
 				Tensor b = ab[1];
 				b = this.m.forward(b);
 				Tensor result = this.cv2.forward(torch.cat([a, b], 1));
-				return result;
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -273,9 +290,10 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				x = this.add ? (x + this.attn.forward(x)) : this.attn.forward(x);
 				x = this.add ? (x + this.ffn.forward(x)) : this.ffn.forward(x);
-				return x;
+				return x.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -308,6 +326,7 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				long B = x.shape[0];
 				long C = x.shape[1];
 				long H = x.shape[2];
@@ -326,7 +345,8 @@ namespace YoloSharp
 				attn = attn.softmax(dim: -1);
 				x = (v.matmul(attn.transpose(-2, -1))).view(B, C, H, W) + this.pe.forward(v.reshape(B, C, H, W));
 				x = this.proj.forward(x);
-				return x;
+
+				return x.MoveToOuterDisposeScope();
 
 			}
 		}
@@ -344,7 +364,9 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				return this.cv2.forward(this.cv1.forward(x));
+				using var _ = NewDisposeScope();
+				Tensor result = this.cv2.forward(this.cv1.forward(x));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -367,12 +389,14 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
+				using var _ = NewDisposeScope();
 				var y = this.cv1.forward(input).chunk(2, 1).ToList();
 				for (int i = 0; i < m.Count; i++)
 				{
 					y.Add(m[i].call(y.Last()));
 				}
-				return cv2.forward(cat(y, 1));
+				Tensor result = cv2.forward(cat(y, 1));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -396,7 +420,9 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				return this.add ? (x + this.cv1.forward(x)) : this.cv1.forward(x);
+				using var _ = NewDisposeScope();
+				Tensor result = this.add ? (x + this.cv1.forward(x)) : this.cv1.forward(x);
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -417,7 +443,9 @@ namespace YoloSharp
 			}
 			public override Tensor forward(Tensor x)
 			{
-				return this.act.forward(this.conv.forward(x) + this.conv1.forward(x));
+				using var _ = NewDisposeScope();
+				Tensor result = this.act.forward(this.conv.forward(x) + this.conv1.forward(x));
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -437,9 +465,12 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
+				using var _ = NewDisposeScope();
 				long b = x.shape[0];  // batch, channels, anchors
 				long a = x.shape[2];
-				return this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a);
+
+				Tensor result = this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a);
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -453,7 +484,9 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor[] input)
 			{
-				return torch.concat(input, dim: dim);
+				using var _ = NewDisposeScope();
+				Tensor result =  torch.concat(input, dim: dim);
+				return result.MoveToOuterDisposeScope();
 			}
 		}
 
@@ -535,6 +568,7 @@ namespace YoloSharp
 
 			private (Tensor, Tensor) _make_grid(int nx = 20, int ny = 20, int i = 0)
 			{
+				using var _ = NewDisposeScope();
 				float[] an = new float[this.anchors.Length * this.anchors[0].Length];
 				for (int ii = 0; ii < this.anchors.Length; ii++)
 				{
@@ -559,11 +593,11 @@ namespace YoloSharp
 
 				Tensor anchor_grid = (anchors[i] * stride[i]).view([1, na, 1, 1, 2]).expand(shape);
 
-				return (grid, anchor_grid);
+				return (grid.MoveToOuterDisposeScope(), anchor_grid.MoveToOuterDisposeScope());
 			}
 		}
 
-		public class Yolov8Detect : Module<Tensor[], Tensor[]>
+		public class YolovDetect : Module<Tensor[], Tensor[]>
 		{
 			private int max_det = 300; // max_det
 			private long[] shape = null;
@@ -579,7 +613,7 @@ namespace YoloSharp
 			private readonly ModuleList<Sequential> cv3 = new ModuleList<Sequential>();
 			private readonly Module<Tensor, Tensor> dfl;
 
-			public Yolov8Detect(int nc, int[] ch, bool legacy = false) : base("Yolov8Detect")
+			public YolovDetect(int nc, int[] ch, bool legacy = false) : base("YolovDetect")
 			{
 				this.nc = nc; // number of classes
 				this.nl = ch.Length;// number of detection layers
@@ -596,7 +630,7 @@ namespace YoloSharp
 
 					if (legacy)
 					{
-						cv3.append(Sequential( Sequential(new DWConv(x, x, 3), new Conv(x, c3, 1)), Sequential(new DWConv(c3, c3, 3), new Conv(c3, c3, 1)), nn.Conv2d(c3, this.nc, 1)));
+						cv3.append(Sequential(Sequential(new DWConv(x, x, 3), new Conv(x, c3, 1)), Sequential(new DWConv(c3, c3, 3), new Conv(c3, c3, 1)), nn.Conv2d(c3, this.nc, 1)));
 					}
 					else
 					{

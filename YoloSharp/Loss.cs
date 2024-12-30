@@ -1,6 +1,4 @@
-﻿using System.Diagnostics.Metrics;
-using System.Text.RegularExpressions;
-using TorchSharp;
+﻿using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -527,7 +525,7 @@ namespace YoloSharp
 			}
 		}
 
-		public class Yolov8DetectionLoss : Module<Tensor[], Tensor, (Tensor, Tensor)>
+		public class YolovDetectionLoss : Module<Tensor[], Tensor, (Tensor, Tensor)>
 		{
 			private readonly int[] stride;
 			private readonly int nc;
@@ -544,7 +542,7 @@ namespace YoloSharp
 			private readonly float hyp_dfl = 1.5f;
 
 
-			public Yolov8DetectionLoss(int nc = 80, int reg_max = 16, int tal_topk = 10) : base("Yolov8DetectionLoss")
+			public YolovDetectionLoss(int nc = 80, int reg_max = 16, int tal_topk = 10) : base("YolovDetectionLoss")
 			{
 				this.stride = [8, 16, 32];
 				this.bce = BCEWithLogitsLoss(reduction: Reduction.None);
@@ -557,6 +555,7 @@ namespace YoloSharp
 
 			public override (Tensor, Tensor) forward(Tensor[] preds, Tensor targets)
 			{
+				using var _ = NewDisposeScope();
 				this.device = preds[0].device;
 				Tensor loss = torch.zeros(3, device: this.device); // box, cls, dfl
 				Tensor[] feats = (Tensor[])preds.Clone();
@@ -603,11 +602,13 @@ namespace YoloSharp
 				loss[0] *= this.hyp_box;  // box gain
 				loss[1] *= this.hyp_cls;// cls gain
 				loss[2] *= this.hyp_dfl;// dfl gain
-				return (loss.sum() * batch_size, loss.detach());
+				//return ((loss.sum() * batch_size).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
+				return ((loss.sum()).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
 			}
 
 			private Tensor bbox_decode(Tensor anchor_points, Tensor pred_dist)
 			{
+				using var _ = NewDisposeScope();
 				// Decode predicted object bounding box coordinates from anchor points and distribution.
 				Tensor proj = torch.arange(this.reg_max, dtype: pred_dist.dtype, device: pred_dist.device);
 				if (this.use_dfl)
@@ -615,11 +616,12 @@ namespace YoloSharp
 					pred_dist = pred_dist.view(pred_dist.shape[0], pred_dist.shape[1], 4, pred_dist.shape[2] / 4).softmax(3).matmul(proj);
 				}
 
-				return dist2bbox(pred_dist, anchor_points, xywh: false);
+				return dist2bbox(pred_dist, anchor_points, xywh: false).MoveToOuterDisposeScope();
 			}
 
 			private Tensor dist2bbox(Tensor distance, Tensor anchor_points, bool xywh = true, int dim = -1)
 			{
+				using var _ = NewDisposeScope();
 				Tensor[] ltrb = distance.chunk(2, dim);
 				Tensor lt = ltrb[0];
 				Tensor rb = ltrb[1];
@@ -633,11 +635,12 @@ namespace YoloSharp
 					Tensor wh = x2y2 - x1y1;
 					return torch.cat([c_xy, wh], dim);  // xywh bbox
 				}
-				return torch.cat([x1y1, x2y2], dim); // xyxy bbox
+				return torch.cat([x1y1, x2y2], dim).MoveToOuterDisposeScope(); // xyxy bbox
 			}
 
 			private (Tensor, Tensor) make_anchors(Tensor[] feats, int[] strides, float grid_cell_offset = 0.5f)
 			{
+				using var _ = NewDisposeScope();
 				ScalarType dtype = feats[0].dtype;
 				Device device = feats[0].device;
 				List<Tensor> anchor_points = new List<Tensor>();
@@ -654,11 +657,12 @@ namespace YoloSharp
 					anchor_points.Add(torch.stack([sx, sy], -1).view(-1, 2));
 					stride_tensor.Add(torch.full([h * w, 1], strides[i], dtype: dtype, device: device));
 				}
-				return (torch.cat(anchor_points), torch.cat(stride_tensor));
+				return (torch.cat(anchor_points).MoveToOuterDisposeScope(), torch.cat(stride_tensor).MoveToOuterDisposeScope());
 			}
 
 			private Tensor postprocess(Tensor targets, long batch_size, Tensor scale_tensor)
 			{
+				using var _ = NewDisposeScope();
 				// Preprocesses the target counts and matches with the input batch size to output a tensor.
 				long nl = targets.shape[0];
 				long ne = targets.shape[1];
@@ -695,7 +699,7 @@ namespace YoloSharp
 					}
 					// Convert xywh to xyxy format and scale
 					_out[TensorIndex.Ellipsis, TensorIndex.Slice(1, 5)] = xywh2xyxy(_out[TensorIndex.Ellipsis, TensorIndex.Slice(1, 5)].mul(scale_tensor));
-					return _out;
+					return _out.MoveToOuterDisposeScope();
 				}
 
 
@@ -703,12 +707,13 @@ namespace YoloSharp
 
 			private Tensor xywh2xyxy(Tensor xywh)
 			{
+				using var _ = NewDisposeScope();
 				var xyxy = torch.zeros_like(xywh);
 				xyxy[TensorIndex.Ellipsis, 0] = xywh[TensorIndex.Ellipsis, 0] - xywh[TensorIndex.Ellipsis, 2] / 2; // x1
 				xyxy[TensorIndex.Ellipsis, 1] = xywh[TensorIndex.Ellipsis, 1] - xywh[TensorIndex.Ellipsis, 3] / 2; // y1
 				xyxy[TensorIndex.Ellipsis, 2] = xywh[TensorIndex.Ellipsis, 0] + xywh[TensorIndex.Ellipsis, 2] / 2; // x2
 				xyxy[TensorIndex.Ellipsis, 3] = xywh[TensorIndex.Ellipsis, 1] + xywh[TensorIndex.Ellipsis, 3] / 2; // y2
-				return xyxy;
+				return xyxy.MoveToOuterDisposeScope();
 			}
 
 		}

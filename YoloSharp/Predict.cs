@@ -1,20 +1,11 @@
-﻿using TorchSharp;
+﻿using System.Reflection;
+using TorchSharp;
 using static TorchSharp.torch;
 
 namespace YoloSharp
 {
 	public class Predict
 	{
-		public class Result
-		{
-			public float score;
-			public int sort;
-			public int x;
-			public int y;
-			public int w;
-			public int h;
-		}
-
 		private static Tensor XYWH2XYXY(Tensor x)
 		{
 			Tensor y = x.clone();
@@ -35,7 +26,7 @@ namespace YoloSharp
 			return y;
 		}
 
-		public class Yolov5Predict
+		public class Yolov5Predict:Module
 		{
 			private readonly float PredictThreshold = 0.25f;
 			private readonly float IouThreshold = 0.5f;
@@ -45,30 +36,18 @@ namespace YoloSharp
 				this.IouThreshold = IouThreshold;
 			}
 
-			public List<Result> Predict(Tensor tensor)
+			public Tensor Predict(Tensor tensor)
 			{
-				List<Result> results = new List<Result>();
-
 				var re = NonMaxSuppression(tensor, PredictThreshold, IouThreshold);
 
 				if (!Equals(re[0], null))
 				{
-					for (int i = 0; i < re[0].shape[0]; i++)
-					{
-						results.Add(new Result
-						{
-							x = re[0][i][0].ToInt32(),
-							y = re[0][i][1].ToInt32(),
-							w = re[0][i][2].ToInt32(),
-							h = re[0][i][3].ToInt32(),
-							score = re[0][i][4].ToSingle(),
-							sort = re[0][i][5].ToInt32(),
-						});
-					}
+					return re[0];
 				}
-
-				return results;
-
+				else
+				{
+					return torch.tensor(new float[0, 6]);
+				}
 			}
 
 			private List<Tensor> NonMaxSuppression(Tensor prediction, float confThreshold = 0.25f, float iouThreshold = 0.45f, bool agnostic = false, int max_det = 300, int nm = 0)
@@ -144,39 +123,29 @@ namespace YoloSharp
 			}
 		}
 
-		public class Yolov8Predict : Modules
+		public class YoloPredict : Modules
 		{
 			private readonly float PredictThreshold = 0.25f;
 			private readonly float IouThreshold = 0.5f;
 
-			public Yolov8Predict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
+			public YoloPredict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
 			{
 				this.PredictThreshold = PredictThreshold;
 				this.IouThreshold = IouThreshold;
 			}
 
-			public List<Result> Predict(Tensor tensor)
+			public Tensor Predict(Tensor tensor)
 			{
-				List<Result> results = new List<Result>();
 				var re = NonMaxSuppression(tensor, PredictThreshold, IouThreshold);
 
 				if (!Equals(re[0], null))
 				{
-					for (int i = 0; i < re[0].shape[0]; i++)
-					{
-						results.Add(new Result
-						{
-							x = re[0][i][0].ToInt32(),
-							y = re[0][i][1].ToInt32(),
-							w = re[0][i][2].ToInt32(),
-							h = re[0][i][3].ToInt32(),
-							score = re[0][i][4].ToSingle(),
-							sort = re[0][i][5].ToInt32(),
-						});
-					}
+					return re[0];
 				}
-				return results;
-
+				else
+				{
+					return torch.tensor(new float[0, 6]);
+				}
 			}
 
 			private List<Tensor> NonMaxSuppression(Tensor prediction, float confThreshold = 0.25f, float iouThreshold = 0.45f, bool agnostic = false, int max_det = 300, int nm = 0)

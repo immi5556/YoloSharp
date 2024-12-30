@@ -28,6 +28,7 @@ namespace YoloSharp
 
 		public (Tensor, Tensor, Tensor, Tensor, Tensor) forward(Tensor pd_scores, Tensor pd_bboxes, Tensor anc_points, Tensor gt_labels, Tensor gt_bboxes, Tensor mask_gt)
 		{
+			using var _ = NewDisposeScope();
 			bs = pd_scores.shape[0];
 			n_max_boxes = gt_bboxes.shape[1];
 
@@ -53,21 +54,23 @@ namespace YoloSharp
 			var norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + eps)).amax(dims: [-2]).unsqueeze(-1);
 			target_scores = target_scores * norm_align_metric;
 
-			return (target_labels, target_bboxes, target_scores, fg_mask.to_type(ScalarType.Bool), target_gt_idx);
+			return (target_labels.MoveToOuterDisposeScope(), target_bboxes.MoveToOuterDisposeScope(), target_scores.MoveToOuterDisposeScope(), fg_mask.to_type(ScalarType.Bool).MoveToOuterDisposeScope(), target_gt_idx.MoveToOuterDisposeScope());
 		}
 
 		private (Tensor, Tensor, Tensor) get_pos_mask(Tensor pd_scores, Tensor pd_bboxes, Tensor gt_labels, Tensor gt_bboxes, Tensor anc_points, Tensor mask_gt)
 		{
+			using var _ = NewDisposeScope();
 			var mask_in_gts = select_candidates_in_gts(anc_points, gt_bboxes);
 			var (align_metric, overlaps) = get_box_metrics(pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_in_gts * mask_gt);
 			var mask_topk = select_topk_candidates(align_metric, topk_mask: mask_gt.expand(bs, n_max_boxes, topk).to_type(ScalarType.Bool));
 			var mask_pos = mask_topk * mask_in_gts * mask_gt;
 
-			return (mask_pos, align_metric, overlaps);
+			return (mask_pos.MoveToOuterDisposeScope(), align_metric.MoveToOuterDisposeScope(), overlaps.MoveToOuterDisposeScope());
 		}
 
 		private Tensor GetBboxScoresUsingGather(Tensor pdScores, Tensor ind, Tensor maskGt)
 		{
+			using var _ = NewDisposeScope();
 			// Extract the batch size, number of proposals, and the number of classes
 			var bs = pdScores.shape[0];
 			var numProposals = pdScores.shape[1];
@@ -84,11 +87,12 @@ namespace YoloSharp
 			var bboxScores = torch.zeros_like(pdScores); // Initialize a tensor of the same shape as pdScores
 			bboxScores[maskGt] = selectedScores[maskGt]; // Apply the mask
 
-			return bboxScores;
+			return bboxScores.MoveToOuterDisposeScope();
 		}
 
 		private (Tensor, Tensor) get_box_metrics(Tensor pd_scores, Tensor pd_bboxes, Tensor gt_labels, Tensor gt_bboxes, Tensor mask_gt)
 		{
+			using var _ = NewDisposeScope();
 			var na = pd_bboxes.shape[1];
 			mask_gt = mask_gt.to_type(ScalarType.Bool);
 
@@ -118,16 +122,19 @@ namespace YoloSharp
 			overlaps[mask_gt] = iou_calculation(gt_boxes, pd_boxes);
 
 			var align_metric = bbox_scores.pow(alpha) * overlaps.pow(beta);
-			return (align_metric, overlaps);
+			return (align_metric.MoveToOuterDisposeScope(), overlaps.MoveToOuterDisposeScope());
 		}
 
 		private Tensor iou_calculation(Tensor gt_bboxes, Tensor pd_bboxes)
 		{
-			return bbox_iou(gt_bboxes, pd_bboxes, xywh: false, CIoU: true).squeeze(-1).clamp(0);
+			using var _ = NewDisposeScope();
+			Tensor result =  bbox_iou(gt_bboxes, pd_bboxes, xywh: false, CIoU: true).squeeze(-1).clamp(0);
+			return result.MoveToOuterDisposeScope();
 		}
 
 		private Tensor select_topk_candidates(Tensor metrics, bool largest = true, Tensor topk_mask = null)
 		{
+			using var _ = NewDisposeScope();
 			var topk_metrics = torch.topk(metrics, topk, dim: -1, largest: largest).values;
 			var topk_idxs = torch.topk(metrics, topk, dim: -1, largest: largest).indices;
 
@@ -147,11 +154,12 @@ namespace YoloSharp
 			}
 
 			count_tensor.masked_fill_(count_tensor > 1, 0);
-			return count_tensor.to_type(metrics.dtype);
+			return count_tensor.to_type(metrics.dtype).MoveToOuterDisposeScope();
 		}
 
 		private (Tensor, Tensor, Tensor) get_targets(Tensor gt_labels, Tensor gt_bboxes, Tensor target_gt_idx, Tensor fg_mask)
 		{
+			using var _ = NewDisposeScope();
 			var batch_ind = torch.arange(bs, dtype: torch.int64, device: gt_labels.device).view(-1, 1);
 			target_gt_idx = target_gt_idx + batch_ind * n_max_boxes;
 			var target_labels = gt_labels.@long().flatten()[target_gt_idx];
@@ -170,11 +178,12 @@ namespace YoloSharp
 			var fg_scores_mask = fg_mask.unsqueeze(-1).expand(bs, -1, num_classes);
 			target_scores = torch.where(fg_scores_mask > 0, target_scores, torch.zeros_like(target_scores));
 
-			return (target_labels, target_bboxes, target_scores);
+			return (target_labels.MoveToOuterDisposeScope(), target_bboxes.MoveToOuterDisposeScope(), target_scores.MoveToOuterDisposeScope());
 		}
 
 		private Tensor select_candidates_in_gts(Tensor xy_centers, Tensor gt_bboxes, float eps = 1e-9f)
 		{
+			using var _ = NewDisposeScope();
 			var n_anchors = xy_centers.shape[0];
 			//var (bs, n_boxes, _) = gt_bboxes.shape;
 			long bs = gt_bboxes.shape[0];
@@ -185,11 +194,12 @@ namespace YoloSharp
 			Tensor rb = lt_rb[1];
 
 			var bbox_deltas = torch.cat([xy_centers[TensorIndex.None] - lt, rb - xy_centers[TensorIndex.None]], dim: 2).view(bs, n_boxes, n_anchors, -1);
-			return bbox_deltas.amin(dims: [3]).gt_(eps);
+			return bbox_deltas.amin(dims: [3]).gt_(eps).MoveToOuterDisposeScope();
 		}
 
 		private (Tensor, Tensor, Tensor) select_highest_overlaps(Tensor mask_pos, Tensor overlaps, long n_max_boxes)
 		{
+			using var _ = NewDisposeScope();
 			var fg_mask = mask_pos.sum(dim: -2);
 
 			if (fg_mask.amax().ToSingle() > 1)
@@ -205,11 +215,12 @@ namespace YoloSharp
 			}
 
 			var target_gt_idx = mask_pos.argmax(dim: -2);
-			return (target_gt_idx, fg_mask, mask_pos);
+			return (target_gt_idx.MoveToOuterDisposeScope(), fg_mask.MoveToOuterDisposeScope(), mask_pos.MoveToOuterDisposeScope());
 		}
 
 		private Tensor bbox_iou(Tensor box1, Tensor box2, bool xywh = true, bool GIoU = false, bool DIoU = false, bool CIoU = false, float eps = 1e-7f)
 		{
+			using var _ = NewDisposeScope();
 			Tensor b1_x1, b1_x2, b1_y1, b1_y2;
 			Tensor b2_x1, b2_x2, b2_y1, b2_y2;
 			Tensor w1, h1, w2, h2;
@@ -274,15 +285,15 @@ namespace YoloSharp
 						using (no_grad())
 						{
 							var alpha = v / (v - iou + (1 + eps));
-							return iou - (rho2 / c2 + v * alpha);  //CIoU
+							return (iou - (rho2 / c2 + v * alpha)).MoveToOuterDisposeScope();  //CIoU
 						}
 					}
-					return iou - rho2 / c2;  // DIoU
+					return (iou - rho2 / c2).MoveToOuterDisposeScope();  // DIoU
 				}
 				var c_area = cw * ch + eps;    // convex area
-				return iou - (c_area - union) / c_area;  // GIoU https://arxiv.org/pdf/1902.09630.pdf
+				return (iou - (c_area - union) / c_area).MoveToOuterDisposeScope();  // GIoU https://arxiv.org/pdf/1902.09630.pdf
 			}
-			return iou; //IoU
+			return iou.MoveToOuterDisposeScope(); //IoU
 		}
 	}
 }
