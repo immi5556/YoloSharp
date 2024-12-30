@@ -10,7 +10,8 @@ With the help of this project you won't have to transform .pt model to onnx, and
 - Support Yolov5, Yolov8 and Yolov11 now.
 - Support n/s/m/l/x size.
 - Support LetterBox and Mosaic4 method for preprocessing images.
-- Support Load PreTrained models from ultralytics/yolov5 (converted)
+- Support NMS with GPU.
+- Support Load PreTrained models from ultralytics/yolov5/yolov8 and yolo11 (converted).
 
 
 ## Models
@@ -19,8 +20,9 @@ You can download yolov5/yolov8 pre-trained models here.
 
 | model | n| s | m | l | x |
 | --- | ----------- | ----------- | ----------- | ----------- | ----------- |
-| yolov5 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov5x.bin) |
-| yolov8 | [yolov8n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8n.bin) | [yolov8s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8s.bin) | [yolov8m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8m.bin) | [yolov8l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8l.bin) | [yolov8x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.2/Yolov8x.bin) |
+| yolov5 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov5n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov5s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov5m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov5l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov5x.bin) |
+| yolov8 | [yolov8n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov8n.bin) | [yolov8s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov8s.bin) | [yolov8m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov8m.bin) | [yolov8l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov8l.bin) | [yolov8x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov8x.bin) |
+| yolov11 | [yolov11n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov11n.bin) | [yolov11s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov11s.bin) | [yolov11m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov11m.bin) | [yolov11l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov11l.bin) | [yolov11x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.3/Yolov11x.bin) |
 
 For example:
 
