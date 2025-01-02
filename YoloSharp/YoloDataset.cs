@@ -9,7 +9,7 @@ namespace YoloSharp
 		private int imageSize = 640;
 		private List<string> imageFiles = new List<string>();
 		private bool useMosaic = true;
-		private Device device = CUDA;
+		private Device device;
 
 		public YoloDataset(string rootPath, int imageSize = 640, bool useMosaic = true, TorchSharp.DeviceType deviceType = TorchSharp.DeviceType.CUDA)
 		{
