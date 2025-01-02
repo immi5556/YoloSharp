@@ -54,7 +54,7 @@ namespace YoloSharp
 			var norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + eps)).amax(dims: [-2]).unsqueeze(-1);
 			target_scores = target_scores * norm_align_metric;
 
-			return (target_labels.MoveToOuterDisposeScope(), target_bboxes.MoveToOuterDisposeScope(), target_scores.MoveToOuterDisposeScope(), fg_mask.to_type(ScalarType.Bool).MoveToOuterDisposeScope(), target_gt_idx.MoveToOuterDisposeScope());
+			return (target_labels.MoveToOuterDisposeScope(), target_bboxes.MoveToOuterDisposeScope(), target_scores.MoveToOuterDisposeScope(), fg_mask.to_type(torch.ScalarType.Bool).MoveToOuterDisposeScope(), target_gt_idx.MoveToOuterDisposeScope());
 		}
 
 		private (Tensor, Tensor, Tensor) get_pos_mask(Tensor pd_scores, Tensor pd_bboxes, Tensor gt_labels, Tensor gt_bboxes, Tensor anc_points, Tensor mask_gt)
@@ -62,7 +62,7 @@ namespace YoloSharp
 			using var _ = NewDisposeScope();
 			var mask_in_gts = select_candidates_in_gts(anc_points, gt_bboxes);
 			var (align_metric, overlaps) = get_box_metrics(pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_in_gts * mask_gt);
-			var mask_topk = select_topk_candidates(align_metric, topk_mask: mask_gt.expand(bs, n_max_boxes, topk).to_type(ScalarType.Bool));
+			var mask_topk = select_topk_candidates(align_metric, topk_mask: mask_gt.expand(bs, n_max_boxes, topk).to_type(torch.ScalarType.Bool));
 			var mask_pos = mask_topk * mask_in_gts * mask_gt;
 
 			return (mask_pos.MoveToOuterDisposeScope(), align_metric.MoveToOuterDisposeScope(), overlaps.MoveToOuterDisposeScope());
@@ -94,7 +94,7 @@ namespace YoloSharp
 		{
 			using var _ = NewDisposeScope();
 			var na = pd_bboxes.shape[1];
-			mask_gt = mask_gt.to_type(ScalarType.Bool);
+			mask_gt = mask_gt.to_type(torch.ScalarType.Bool);
 
 			var overlaps = torch.zeros(bs, n_max_boxes, na, dtype: pd_bboxes.dtype, device: pd_bboxes.device);
 			var bbox_scores = torch.zeros(bs, n_max_boxes, na, dtype: pd_scores.dtype, device: pd_scores.device);
@@ -128,7 +128,7 @@ namespace YoloSharp
 		private Tensor iou_calculation(Tensor gt_bboxes, Tensor pd_bboxes)
 		{
 			using var _ = NewDisposeScope();
-			Tensor result =  bbox_iou(gt_bboxes, pd_bboxes, xywh: false, CIoU: true).squeeze(-1).clamp(0);
+			Tensor result = bbox_iou(gt_bboxes, pd_bboxes, xywh: false, CIoU: true).squeeze(-1).clamp(0);
 			return result.MoveToOuterDisposeScope();
 		}
 
@@ -210,7 +210,7 @@ namespace YoloSharp
 				var is_max_overlaps = torch.zeros_like(mask_pos, dtype: mask_pos.dtype, device: mask_pos.device);
 				is_max_overlaps.scatter_(dim: 1, index: max_overlaps_idx.unsqueeze(1), src: torch.ones_like(max_overlaps_idx.unsqueeze(1), dtype: mask_pos.dtype, device: mask_pos.device));
 
-				mask_pos = torch.where(mask_multi_gts, is_max_overlaps, mask_pos).to_type(ScalarType.Float32);
+				mask_pos = torch.where(mask_multi_gts, is_max_overlaps, mask_pos).to_type(torch.ScalarType.Float32);
 				fg_mask = mask_pos.sum(dim: -2);
 			}
 

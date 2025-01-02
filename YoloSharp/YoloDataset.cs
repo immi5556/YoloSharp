@@ -3,7 +3,7 @@ using static TorchSharp.torch;
 
 namespace YoloSharp
 {
-	internal class YoloDataset : utils.data.Dataset
+	public class YoloDataset : utils.data.Dataset
 	{
 		private string rootPath = string.Empty;
 		private int imageSize = 640;
@@ -11,11 +11,15 @@ namespace YoloSharp
 		private bool useMosaic = true;
 		private Device device = CUDA;
 
-		public YoloDataset(string rootPath, int imageSize = 640, bool useMosaic = true, DeviceType deviceType = DeviceType.CUDA)
+		public YoloDataset(string rootPath, int imageSize = 640, bool useMosaic = true, TorchSharp.DeviceType deviceType = TorchSharp.DeviceType.CUDA)
 		{
 			torchvision.io.DefaultImager = new torchvision.io.SkiaImager();
 			this.rootPath = rootPath;
 			string imagesFolder = Path.Combine(rootPath, "images");
+			if (!Directory.Exists(imagesFolder))
+			{
+				throw new DirectoryNotFoundException($"The folder {imagesFolder} does not exist.");
+			}
 
 			string[] imagesFileNames = Directory.GetFiles(imagesFolder, "*.*", SearchOption.AllDirectories).Where(file =>
 			{
@@ -181,7 +185,7 @@ namespace YoloSharp
 			int xc = random.Next(-mosaic_border[0], 2 * imageSize + mosaic_border[0]);
 			int yc = random.Next(-mosaic_border[1], 2 * imageSize + mosaic_border[1]);
 
-			var img4 = full([3, imageSize * 2, imageSize * 2], 114, ScalarType.Byte, device); // base image with 4 tiles
+			var img4 = full([3, imageSize * 2, imageSize * 2], 114, torch.ScalarType.Byte, device); // base image with 4 tiles
 			List<Tensor> label4 = new List<Tensor>();
 			for (int i = 0; i < 4; i++)
 			{
@@ -371,7 +375,7 @@ namespace YoloSharp
 			//var M = T.mm(S).mm(R).mm(P).mm(C);
 			var M = T.matmul(S).matmul(R).matmul(P).matmul(C);
 
-			Tensor outTensor = zeros([imageSize, imageSize, 3], ScalarType.Byte).to(device);
+			Tensor outTensor = zeros([imageSize, imageSize, 3], torch.ScalarType.Byte).to(device);
 			if (borderX != 0 || borderY != 0 || M.bytes != eye(3).bytes)
 			{
 				if (perspective != 0)

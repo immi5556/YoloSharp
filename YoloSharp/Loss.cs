@@ -5,7 +5,7 @@ using static TorchSharp.torch.nn;
 
 namespace YoloSharp
 {
-	public class Loss
+	internal class Loss
 	{
 		/// <summary>
 		/// Returns label smoothing BCE targets for reducing overfitting
@@ -243,8 +243,8 @@ namespace YoloSharp
 			private readonly int nl;
 			private readonly float[][] anchors;
 
-			private Device device = new Device(DeviceType.CPU);
-			private ScalarType dtype = ScalarType.Float32;
+			private torch.Device device = new Device(TorchSharp.DeviceType.CPU);
+			private torch.ScalarType dtype = torch.ScalarType.Float32;
 
 			private readonly float anchor_t = 4.0f;
 			private readonly bool sort_obj_iou = false;
@@ -336,7 +336,7 @@ namespace YoloSharp
 						// Classification
 						if (nc > 1)  // cls loss (only if multiple classes)
 						{
-							var tt = full_like(pcls, cn, device: device, dtype: ScalarType.Float32);  // targets
+							var tt = full_like(pcls, cn, device: device, dtype: torch.ScalarType.Float32);  // targets
 							tt[arange(n), tcls[i]] = cp;
 							lcls += BCEcls.forward(pcls, tt.to(dtype));  // BCE
 						}
@@ -349,8 +349,6 @@ namespace YoloSharp
 					{
 						balance[i] = balance[i] * 0.9999f + 0.0001f / obji.detach().item<float>();
 					}
-
-
 				}
 				if (autobalance)
 				{
@@ -532,7 +530,8 @@ namespace YoloSharp
 			private readonly int no;
 			private readonly int reg_max;
 			private readonly int tal_topk;
-			private Device device;
+			private torch.Device device;
+			private torch.ScalarType dtype;
 			private readonly bool use_dfl;
 
 			private readonly BCEWithLogitsLoss bce;
@@ -557,7 +556,8 @@ namespace YoloSharp
 			{
 				using var _ = NewDisposeScope();
 				this.device = preds[0].device;
-				Tensor loss = torch.zeros(3, device: this.device); // box, cls, dfl
+				this.dtype = preds[0].dtype;
+				Tensor loss = torch.zeros(3, device: this.device, dtype: this.dtype); // box, cls, dfl
 				Tensor[] feats = (Tensor[])preds.Clone();
 				List<Tensor> feats_mix = new List<Tensor>();
 				foreach (Tensor xi in feats)
@@ -571,7 +571,6 @@ namespace YoloSharp
 				pred_scores = pred_scores.permute(0, 2, 1).contiguous();
 				pred_distri = pred_distri.permute(0, 2, 1).contiguous();
 
-				ScalarType dtype = pred_scores.dtype;
 				long batch_size = pred_scores.shape[0];
 
 				Tensor imgsz = torch.tensor(feats[0].shape[2..], device: this.device, dtype: dtype) * this.stride[0]; // image size (h,w)
@@ -602,8 +601,8 @@ namespace YoloSharp
 				loss[0] *= this.hyp_box;  // box gain
 				loss[1] *= this.hyp_cls;// cls gain
 				loss[2] *= this.hyp_dfl;// dfl gain
-				//return ((loss.sum() * batch_size).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
-				return ((loss.sum()).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
+				return ((loss.sum() * batch_size).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
+				//return ((loss.sum()).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
 			}
 
 			private Tensor bbox_decode(Tensor anchor_points, Tensor pred_dist)
@@ -641,7 +640,7 @@ namespace YoloSharp
 			private (Tensor, Tensor) make_anchors(Tensor[] feats, int[] strides, float grid_cell_offset = 0.5f)
 			{
 				using var _ = NewDisposeScope();
-				ScalarType dtype = feats[0].dtype;
+				torch.ScalarType dtype = feats[0].dtype;
 				Device device = feats[0].device;
 				List<Tensor> anchor_points = new List<Tensor>();
 				List<Tensor> stride_tensor = new List<Tensor>();
@@ -684,7 +683,7 @@ namespace YoloSharp
 						if (n > 0)
 						{
 							// Get the indices where matches is True
-							var indices = torch.nonzero(matches).squeeze().to(ScalarType.Int64);
+							var indices = torch.nonzero(matches).squeeze().to(torch.ScalarType.Int64);
 
 							// Select the rows from targets
 							var selectedRows = targets.index_select(0, indices.contiguous());

@@ -6,7 +6,7 @@ using static TorchSharp.torch.nn;
 
 namespace YoloSharp
 {
-	public class Modules
+	internal class Modules
 	{
 		public class Conv : Module<Tensor, Tensor>
 		{
@@ -506,8 +506,8 @@ namespace YoloSharp
 			private float[][] anchors;
 			private readonly int[] ch;
 
-			private Device device;
-			private ScalarType scalarType;
+			private torch.Device device;
+			private torch.ScalarType scalarType;
 
 			public Yolov5Detect(int nc, int[] ch, float[][] anchors, bool inplace = true) : base("Yolov5Detect")
 			{
@@ -714,7 +714,7 @@ namespace YoloSharp
 
 			private (Tensor, Tensor) make_anchors(Tensor[] feats, int[] strides, float grid_cell_offset = 0.5f)
 			{
-				ScalarType dtype = feats[0].dtype;
+				torch.ScalarType dtype = feats[0].dtype;
 				Device device = feats[0].device;
 				List<Tensor> anchor_points = new List<Tensor>();
 				List<Tensor> stride_tensor = new List<Tensor>();

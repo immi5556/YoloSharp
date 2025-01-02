@@ -1,10 +1,11 @@
 ﻿using System.Reflection;
 using TorchSharp;
 using static TorchSharp.torch;
+using static TorchSharp.torch.nn;
 
 namespace YoloSharp
 {
-	public class Predict
+	internal class Predict
 	{
 		private static Tensor XYWH2XYXY(Tensor x)
 		{
@@ -26,17 +27,17 @@ namespace YoloSharp
 			return y;
 		}
 
-		public class Yolov5Predict:Module
+		public class Yolov5Predict : Module<Tensor, Tensor>
 		{
 			private readonly float PredictThreshold = 0.25f;
 			private readonly float IouThreshold = 0.5f;
-			public Yolov5Predict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
+			public Yolov5Predict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f) : base("predict")
 			{
 				this.PredictThreshold = PredictThreshold;
 				this.IouThreshold = IouThreshold;
 			}
 
-			public Tensor Predict(Tensor tensor)
+			public override Tensor forward(Tensor tensor)
 			{
 				var re = NonMaxSuppression(tensor, PredictThreshold, IouThreshold);
 
@@ -123,18 +124,18 @@ namespace YoloSharp
 			}
 		}
 
-		public class YoloPredict : Modules
+		public class YoloPredict  : Module<Tensor, Tensor>
 		{
 			private readonly float PredictThreshold = 0.25f;
 			private readonly float IouThreshold = 0.5f;
 
-			public YoloPredict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
+			public YoloPredict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f):base("predict")
 			{
 				this.PredictThreshold = PredictThreshold;
 				this.IouThreshold = IouThreshold;
 			}
 
-			public Tensor Predict(Tensor tensor)
+			public override Tensor forward(Tensor tensor)
 			{
 				var re = NonMaxSuppression(tensor, PredictThreshold, IouThreshold);
 

@@ -5,17 +5,8 @@ using static YoloSharp.Modules;
 
 namespace YoloSharp
 {
-	internal class Yolo
+	public class Yolo
 	{
-		public enum YoloSize
-		{
-			n = 0,
-			s,
-			m,
-			l,
-			x,
-		}
-
 		public class Yolov5 : Module<Tensor, Tensor[]>
 		{
 			private readonly ModuleList<Module> model;
