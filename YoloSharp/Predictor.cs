@@ -70,14 +70,10 @@ namespace YoloSharp
 			};
 		}
 
-		public void Train(string trainDataPath, string valDataPath = "", string outputPath = "output", string preTraindModelPath = "", int imageSize = 640, int epochs = 100, float lr = 0.0001f, int batchSize = 8, int numWorkers = 0, bool useMosaic = true)
+		public void Train(string trainDataPath, string valDataPath = "", string outputPath = "output", int imageSize = 640, int epochs = 100, float lr = 0.0001f, int batchSize = 8, int numWorkers = 0, bool useMosaic = true)
 		{
 			Console.WriteLine("Model will be write to: " + outputPath);
 			Console.WriteLine("Load model...");
-			if (!string.IsNullOrEmpty(preTraindModelPath))
-			{
-				ModelLoad(preTraindModelPath);
-			}
 
 			YoloDataset trainDataSet = new YoloDataset(trainDataPath, imageSize, deviceType: this.device.type, useMosaic: useMosaic);
 			if (trainDataSet.Count == 0)
@@ -89,6 +85,7 @@ namespace YoloSharp
 			Optimizer optimizer = new SGD(yolo.parameters(), lr: lr);
 			float tempLoss = float.MaxValue;
 			Console.WriteLine("Start Training...");
+			yolo.train(true);
 			for (int epoch = 0; epoch < epochs; epoch++)
 			{
 				int step = 0;
@@ -176,7 +173,7 @@ namespace YoloSharp
 			return lossValue;
 		}
 
-		public List<PredictResult> ImagePredict(Bitmap image, string modelPath, float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
+		public List<PredictResult> ImagePredict(Bitmap image, float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
 		{
 			byte[] buffer = new byte[image.Width * image.Height * 3];
 			BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
@@ -193,7 +190,6 @@ namespace YoloSharp
 			padWidth = padWidth == 32 ? 0 : padWidth;
 
 			Tensor input = torch.nn.functional.pad(orgImage, [0, padWidth, 0, padHeight], PaddingModes.Zeros);
-			ModelLoad(modelPath);
 			yolo.eval();
 
 			Tensor[] tensors = yolo.forward(input);
@@ -223,7 +219,7 @@ namespace YoloSharp
 			return predResults;
 		}
 
-		private void ModelLoad(string path)
+		public void LoadModel(string path)
 		{
 			using FileStream input = File.OpenRead(path);
 			using BinaryReader reader = new BinaryReader(input);

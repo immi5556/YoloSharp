@@ -24,15 +24,19 @@ namespace YoloSharpDemo
 			YoloSize yoloSize = YoloSize.n;
 
 			Bitmap inputBitmap = new Bitmap(predictImagePath);
-			
+
+			// Create predictor
 			Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
 
 			// Train model
-			predictor.Train(trainDataPath, valDataPath, preTraindModelPath: preTraindModelPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs);
+			predictor.LoadModel(preTraindModelPath);
+			predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs);
 
 			// Predict image
-			var results = predictor.ImagePredict(inputBitmap, Path.Combine(outputPath, "best.bin"), predictThreshold, iouThreshold);
-			
+			predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
+			var results = predictor.ImagePredict(inputBitmap, predictThreshold, iouThreshold);
+
+			// Draw results
 			Graphics g = Graphics.FromImage(inputBitmap);
 			foreach (var result in results)
 			{
