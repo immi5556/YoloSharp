@@ -15,8 +15,7 @@ namespace YoloSharp
 		private long bs;
 		private long n_max_boxes;
 
-		public TaskAlignedAssigner(int topk = 13, int num_classes = 80, float alpha = 1.0f, float beta = 6.0f, float eps = 1e-9f)
-			: base("TaskAlignedAssigner")
+		public TaskAlignedAssigner(int topk = 13, int num_classes = 80, float alpha = 1.0f, float beta = 6.0f, float eps = 1e-9f) : base("TaskAlignedAssigner")
 		{
 			this.topk = topk;
 			this.num_classes = num_classes;

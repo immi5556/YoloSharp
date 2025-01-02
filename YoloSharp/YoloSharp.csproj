@@ -5,12 +5,27 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RootNamespace />
+    <AssemblyName>IntptrMax.YoloSharp</AssemblyName>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <Authors>IntptrMax</Authors>
+    <PackageProjectUrl>https://github.com/IntptrMax/YoloSharp</PackageProjectUrl>
+    <Description>Train and Predict yolov5, yolov8 and yolov11 model.
+Requires reference to one of libtorch-cpu, libtorch-cuda-12.1, libtorch-cuda-12.1-win-x64 or libtorch-cuda-12.1-linux-x64 version 2.5.1.0 to execute.
+</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="Assets\**" />
     <EmbeddedResource Remove="Assets\**" />
     <None Remove="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\LICENSE.txt">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
