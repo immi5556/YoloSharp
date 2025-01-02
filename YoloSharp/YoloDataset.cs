@@ -3,7 +3,7 @@ using static TorchSharp.torch;
 
 namespace YoloSharp
 {
-	public class YoloDataset : utils.data.Dataset
+	internal class YoloDataset : utils.data.Dataset
 	{
 		private string rootPath = string.Empty;
 		private int imageSize = 640;

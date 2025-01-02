@@ -5,7 +5,7 @@ using static YoloSharp.Modules;
 
 namespace YoloSharp
 {
-	public class Yolo
+	internal class Yolo
 	{
 		public class Yolov5 : Module<Tensor, Tensor[]>
 		{
