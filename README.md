@@ -25,6 +25,33 @@ You can download yolov5/yolov8 pre-trained models here.
 | yolov8 | [yolov8n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8n.bin) | [yolov8s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8s.bin) | [yolov8m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8m.bin) | [yolov8l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8l.bin) | [yolov8x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8x.bin) |
 | yolov11 | [yolov11n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11n.bin) | [yolov11s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11s.bin) | [yolov11m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11m.bin) | [yolov11l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11l.bin) | [yolov11x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11x.bin) |
 
+
+## How to use
+
+You can download the code or add it from nuget.
+
+dotnet add package IntptrMax.YoloSharp --version 1.0.0
+
+Then you can use it with the code below:
+
+Bitmap inputBitmap = new Bitmap(predictImagePath);
+
+// Create predictor
+
+Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+
+// Train model
+
+predictor.LoadModel(preTraindModelPath);
+
+predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs);
+
+// Predict image
+
+predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
+
+var results = predictor.ImagePredict(inputBitmap, predictThreshold, iouThreshold);
+
 For example:
 
 Use yolov5n pre-trained model to detect coco128
