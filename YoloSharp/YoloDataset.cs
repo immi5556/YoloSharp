@@ -1,4 +1,5 @@
-﻿using TorchSharp;
+﻿using System.Drawing;
+using TorchSharp;
 using static TorchSharp.torch;
 
 namespace YoloSharp
@@ -97,6 +98,16 @@ namespace YoloSharp
 			return (image.MoveToOuterDisposeScope(), label.MoveToOuterDisposeScope());
 		}
 
+		public (Tensor, Tensor, Tensor) GetSegmentDataTensor(long index)
+		{
+			if (useMosaic)
+			{
+				Console.WriteLine("Mosaic is not supported now, it will come latter ...");
+			}
+			return GetLetterBoxSegmentData(index);
+		}
+
+
 		private (Tensor, float, int) Letterbox(Tensor image, int targetWidth, int targetHeight)
 		{
 			using var _ = NewDisposeScope();
@@ -169,6 +180,71 @@ namespace YoloSharp
 			Tensor labelTensor = tensor(labelArray);
 			return labelTensor.MoveToOuterDisposeScope();
 
+		}
+
+		public (Tensor, Tensor, Tensor) GetLetterBoxSegmentData(long index)
+		{
+			using var _ = NewDisposeScope();
+			int maskSize = 160;
+			Tensor orgImageTensor = torchvision.io.read_image(imageFiles[(int)index], torchvision.io.ImageReadMode.RGB);
+
+			int originalWidth = (int)orgImageTensor.shape[2];
+			int originalHeight = (int)orgImageTensor.shape[1];
+
+			float scale = Math.Min((float)imageSize / originalWidth, (float)imageSize / originalHeight);
+			int padWidth = imageSize - (int)(scale * originalWidth);
+			int padHeight = imageSize - (int)(scale * originalHeight);
+
+			float maskWidthScale = scale * originalWidth / imageSize;
+			float maskHeightScale = scale * originalHeight / imageSize;
+
+			Tensor imgTensor = torchvision.transforms.functional.resize(orgImageTensor, (int)(originalHeight * scale), (int)(originalWidth * scale));
+			imgTensor = torch.nn.functional.pad(imgTensor, [0, padWidth, 0, padHeight], PaddingModes.Zeros);
+
+			Tensor outputImg = torch.zeros([3, imageSize, imageSize]);
+			outputImg[TensorIndex.Colon, ..(int)imgTensor.shape[1], ..(int)imgTensor.shape[2]] = imgTensor;
+
+			string labelName = GetLabelFileNameFromImageName(imageFiles[(int)index]);
+			string[] lines = File.ReadAllLines(labelName);
+			float[,] labelArray = new float[lines.Length, 5];
+
+			Tensor mask = torch.zeros([maskSize, maskSize]);
+			for (int i = 0; i < lines.Length; i++)
+			{
+				string[] datas = lines[i].Split(' ');
+				labelArray[i, 0] = float.Parse(datas[0]);
+
+				List<PointF> points = new List<PointF>();
+				for (int j = 1; j < datas.Length; j = j + 2)
+				{
+					points.Add(new PointF(float.Parse(datas[j]) * scale * originalWidth * maskSize / imageSize, float.Parse(datas[j + 1]) * scale * originalHeight * maskSize / imageSize));
+				}
+
+				float maxX = points.Max(p => p.X) / maskSize;
+				float maxY = points.Max(p => p.Y) / maskSize;
+				float minX = points.Min(p => p.X) / maskSize;
+				float minY = points.Min(p => p.Y) / maskSize;
+
+				float width = maxX - minX;
+				float height = maxY - minY;
+				labelArray[i, 1] = minX + width / 2;
+				labelArray[i, 2] = minY + height / 2;
+				labelArray[i, 3] = width;
+				labelArray[i, 4] = height;
+
+				Bitmap bitmap = new Bitmap(maskSize, maskSize);
+				Brush brush = new SolidBrush(Color.White);
+
+				Graphics g = Graphics.FromImage(bitmap);
+				g.FillClosedCurve(brush, points.ToArray());
+				g.Save();
+				Tensor msk = Lib.GetTensorFromBitmap(bitmap);
+				msk = msk[0] > 0;
+				mask[msk] = i + 1;
+			}
+			Tensor labelTensor = tensor(labelArray);
+			long p = imgTensor.shape[0];
+			return (imgTensor.MoveToOuterDisposeScope(), labelTensor.MoveToOuterDisposeScope(), mask.MoveToOuterDisposeScope());
 		}
 
 		public Tensor GetOrgImage(long index)
@@ -297,7 +373,7 @@ namespace YoloSharp
 			// Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] normalized where xy1=top-left, xy2=bottom-right.
 			if (clip)
 			{
-				x = clip_boxes(x, [h - eps, w - eps]);
+				x = Lib.ClipBox(x, [h - eps, w - eps]);
 			}
 			var y = x.clone();
 			y[TensorIndex.Ellipsis, 0] = (x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2]) / 2 / w;  // x center
@@ -305,18 +381,6 @@ namespace YoloSharp
 			y[TensorIndex.Ellipsis, 2] = (x[TensorIndex.Ellipsis, 2] - x[TensorIndex.Ellipsis, 0]) / w;  // width
 			y[TensorIndex.Ellipsis, 3] = (x[TensorIndex.Ellipsis, 3] - x[TensorIndex.Ellipsis, 1]) / h;  // height
 			return y.MoveToOuterDisposeScope();
-		}
-
-		private Tensor clip_boxes(Tensor boxes, float[] shape)
-		{
-			using var _ = NewDisposeScope();
-			// """Clips bounding box coordinates (xyxy) to fit within the specified image shape (height, width)."""
-
-			boxes[TensorIndex.Ellipsis, 0] = boxes[TensorIndex.Ellipsis, 0].clamp_(0, shape[1]);  // x1
-			boxes[TensorIndex.Ellipsis, 1] = boxes[TensorIndex.Ellipsis, 1].clamp_(0, shape[0]);  // y1
-			boxes[TensorIndex.Ellipsis, 2] = boxes[TensorIndex.Ellipsis, 2].clamp_(0, shape[1]);  // x2
-			boxes[TensorIndex.Ellipsis, 3] = boxes[TensorIndex.Ellipsis, 3].clamp_(0, shape[0]);  // y2
-			return boxes.MoveToOuterDisposeScope();
 		}
 
 		private Tensor GetOrgLabelTensor(long index)
@@ -337,6 +401,50 @@ namespace YoloSharp
 			}
 			Tensor labelTensor = tensor(labelArray);
 			return labelTensor.MoveToOuterDisposeScope();
+		}
+
+		private (Tensor, Tensor) GetOrgMaskLabelTensor(long index, int width = 160, int height = 160)
+		{
+			using var _ = NewDisposeScope();
+			string labelName = GetLabelFileNameFromImageName(imageFiles[(int)index]);
+			string[] lines = File.ReadAllLines(labelName);
+
+			List<Tensor> labels = new List<Tensor>();
+			List<Tensor> masks = new List<Tensor>();
+			foreach (string line in lines)
+			{
+				List<PointF> points = new List<PointF>();
+				string[] strs = line.Split(' ');
+				for (int i = 0; i < strs.Length / 2; i++)
+				{
+					float x = float.Parse(strs[i * 2 + 1]) * width;
+					float y = float.Parse(strs[i * 2 + 2]) * height;
+					points.Add(new PointF(x, y));
+				}
+				float x_max = points.Max(a => a.X);
+				float y_max = points.Max(a => a.Y);
+				float x_min = points.Min(a => a.X);
+				float y_min = points.Min(a => a.Y);
+
+				labels.Add(torch.tensor(new float[] { x_min, y_min, x_max - x_min, y_max - y_min }).unsqueeze(0));
+
+				Bitmap bmp = new Bitmap(width, height);
+				Graphics graph = Graphics.FromImage(bmp);
+				Brush brush = new SolidBrush(Color.White);
+				graph.FillClosedCurve(brush, points.ToArray());
+				graph.Save();
+				MemoryStream ms = new MemoryStream();
+				bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+				ms.Position = 0;
+				Tensor ts = torchvision.io.read_image(ms);
+				masks.Add(ts[0].unsqueeze(0));
+			}
+
+			Tensor labelTensor = torch.cat(labels.ToArray());
+			Tensor maskTensor = torch.cat(masks.ToArray());
+
+			return (labelTensor.MoveToOuterDisposeScope(), maskTensor.MoveToOuterDisposeScope());
+
 		}
 
 		private (Tensor, Tensor) random_perspective(Tensor im, Tensor targets, int degrees = 10, float translate = 0.1f, float scale = 0.1f, int shear = 10, float perspective = 0.0f, int borderX = 0, int borderY = 0)

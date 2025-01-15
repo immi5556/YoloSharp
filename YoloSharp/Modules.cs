@@ -485,7 +485,7 @@ namespace YoloSharp
 			public override Tensor forward(Tensor[] input)
 			{
 				using var _ = NewDisposeScope();
-				Tensor result =  torch.concat(input, dim: dim);
+				Tensor result = torch.concat(input, dim: dim);
 				return result.MoveToOuterDisposeScope();
 			}
 		}
@@ -639,7 +639,7 @@ namespace YoloSharp
 				}
 
 				this.dfl = this.reg_max > 1 ? new DFL(this.reg_max) : nn.Identity();
-				RegisterComponents();
+				//RegisterComponents();
 			}
 
 			public override Tensor[] forward(Tensor[] x)
@@ -733,6 +733,70 @@ namespace YoloSharp
 				return (torch.cat(anchor_points), torch.cat(stride_tensor));
 			}
 
+		}
+
+		public class Proto : Module<Tensor, Tensor>
+		{
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			private readonly Conv cv3;
+			private readonly ConvTranspose2d upsample;
+			public Proto(int c1, int c_ = 256, int c2 = 32) : base("Proto")
+			{
+				this.cv1 = new Conv(c1, c_, kernel_size: 3);
+				this.upsample = nn.ConvTranspose2d(c_, c_, 2, 2, 0, bias: true);  // nn.Upsample(scale_factor=2, mode='nearest')
+				this.cv2 = new Conv(c_, c_, kernel_size: 3);
+				this.cv3 = new Conv(c_, c2, kernel_size: 1);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				using var _ = NewDisposeScope();
+				return this.cv3.forward(this.cv2.forward(this.upsample.forward(this.cv1.forward(x)))).MoveToOuterDisposeScope();
+			}
+		}
+
+		public class Segment : YolovDetect
+		{
+			private readonly int nm;
+			private readonly int npr;
+			private readonly Proto proto;
+			private readonly int c4;
+			private readonly ModuleList<Sequential> cv4 = new ModuleList<Sequential>();
+
+			public Segment(int[] ch, int nc = 80, int nm = 32, int npr = 256, bool legacy = false) : base(nc, ch, legacy)
+			{
+				this.nm = nm; // number of masks
+				this.npr = npr;  // number of protos
+				this.proto = new Proto(ch[0], this.npr, this.nm);  // protos
+				c4 = Math.Max(ch[0] / 4, this.nm);
+
+				foreach (int x in ch)
+				{
+					cv4.append(Sequential(new Conv(x, c4, 3), new Conv(c4, c4, 3), nn.Conv2d(c4, this.nm, 1)));
+				}
+				//RegisterComponents();
+
+			}
+
+			public override Tensor[] forward(Tensor[] x)
+			{
+				Tensor p = this.proto.forward(x[0]); // mask protos
+				long bs = p.shape[0]; //batch size
+
+				var mc = torch.cat(this.cv4.Select((module, i) => module.forward(x[i]).view(bs, this.nm, -1)).ToArray(), dim: 2); // mask coefficients				x = base.forward(x);
+				x = base.forward(x);
+				if (this.training)
+				{
+					x = (x.Append(mc).Append(p)).ToArray();
+					return x;
+				}
+				else
+				{
+					return [torch.cat([x[0], mc], dim: 1), x[1], x[2], x[3], p];
+				}
+			}
 		}
 
 	}

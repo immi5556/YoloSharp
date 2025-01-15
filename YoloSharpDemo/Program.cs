@@ -7,49 +7,64 @@ namespace YoloSharpDemo
 	{
 		static void Main(string[] args)
 		{
-			string trainDataPath = @"..\..\..\Assets\coco128"; // Training data path, it should be the same as coco dataset.
-			string valDataPath = @"..\..\..\Assets\coco128"; // If valDataPath is "", it will use trainDataPath as validation data.
+			string trainDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // Training data path, it should be the same as coco dataset.
+			string valDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // If valDataPath is "", it will use trainDataPath as validation data.
 			string outputPath = "result";    // Trained model output path.
-			string preTraindModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n.bin"; // Pretrained model path.
-			string predictImagePath = @"..\..\..\Assets\TestImage\zidane.jpg";
-			int batchSize = 8;
+			string preTraindModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n-seg.bin"; // Pretrained model path.
+			string predictImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
+			int batchSize = 16;
 			int sortCount = 80;
 			int epochs = 100;
-			float predictThreshold = 0.3f;
-			float iouThreshold = 0.5f;
+			float predictThreshold = 0.5f;
+			float iouThreshold = 0.45f;
 
 			YoloType yoloType = YoloType.Yolov8;
 			DeviceType deviceType = DeviceType.CUDA;
 			ScalarType dtype = ScalarType.Float32;
 			YoloSize yoloSize = YoloSize.n;
 
-			Bitmap inputBitmap = new Bitmap(predictImagePath);
-
 			// Create predictor
-			Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+			// Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
 
 			// Train model
-			predictor.LoadModel(preTraindModelPath);
-			predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs);
+			//predictor.LoadModel(preTraindModelPath, skipNcNotEqualLayers: true);
+			//predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
 
-			// Predict image
-			predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
-			var results = predictor.ImagePredict(inputBitmap, predictThreshold, iouThreshold);
+			// ImagePredict image
+			// Bitmap bitmap = new Bitmap(predictImagePath);
+			//predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
+			//predictor.LoadModel(preTraindModelPath);
+			//var predictResult = predictor.ImagePredict(bitmap, predictThreshold, iouThreshold);
 
-			// Draw results
-			Graphics g = Graphics.FromImage(inputBitmap);
-			foreach (var result in results)
+			// Create segmenter
+
+			Segmenter segmenter = new Segmenter(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+			segmenter.LoadModel(preTraindModelPath);
+
+			segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
+			segmenter.LoadModel("output/best.bin");
+
+			Bitmap testBitmap = new Bitmap(predictImagePath);
+			var (predictResult, bitmap) = segmenter.ImagePredict(testBitmap, predictThreshold, iouThreshold);
+
+			if (predictResult.Count > 0)
 			{
-				Point point = new Point(result.X - result.W / 2, result.Y - result.H / 2);
-				string str = string.Format("Sort:{0}, Score:{1:F1}%", result.ClassID, result.Score * 100);
-				g.DrawRectangle(Pens.Red, new Rectangle(point, new Size(result.W, result.H)));
-				g.DrawString(str, new Font(FontFamily.GenericMonospace, 10), new SolidBrush(Color.Red), point);
-				Console.WriteLine(str);
+				// Draw results
+				Graphics g = Graphics.FromImage(bitmap);
+				foreach (var result in predictResult)
+				{
+					Point point = new Point(result.X, result.Y);
+					string str = string.Format("Sort:{0}, Score:{1:F1}%", result.ClassID, result.Score * 100);
+					g.DrawRectangle(Pens.Red, new Rectangle(point, new Size(result.W, result.H)));
+					g.DrawString(str, new Font(FontFamily.GenericMonospace, 10), new SolidBrush(Color.Red), point);
+					Console.WriteLine(str);
+				}
+				g.Save();
+				bitmap.Save("pred.jpg");
 			}
-			g.Save();
-			inputBitmap.Save("pred.jpg");
+
 			Console.WriteLine();
-			Console.WriteLine("Predict done");
+			Console.WriteLine("ImagePredict done");
 		}
 
 	}

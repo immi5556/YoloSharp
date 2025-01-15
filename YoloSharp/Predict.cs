@@ -1,5 +1,4 @@
-﻿using System.Reflection;
-using TorchSharp;
+﻿using TorchSharp;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 
@@ -7,37 +6,14 @@ namespace YoloSharp
 {
 	internal class Predict
 	{
-		private static Tensor XYWH2XYXY(Tensor x)
+		public class Yolov5Predict : Module<Tensor, float, float, Tensor>
 		{
-			Tensor y = x.clone();
-			y[TensorIndex.Ellipsis, 0] = x[TensorIndex.Ellipsis, 0] - x[TensorIndex.Ellipsis, 2] / 2;  // top left x
-			y[TensorIndex.Ellipsis, 1] = x[TensorIndex.Ellipsis, 1] - x[TensorIndex.Ellipsis, 3] / 2;  // top left y
-			y[TensorIndex.Ellipsis, 2] = x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2] / 2; // bottom right x
-			y[TensorIndex.Ellipsis, 3] = x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3] / 2; // bottom right y
-			return y;
-		}
-
-		private static Tensor XYXY2XYWH(Tensor x)
-		{
-			var y = x.clone();
-			y[TensorIndex.Ellipsis, 0] = (x[TensorIndex.Ellipsis, 0] + x[TensorIndex.Ellipsis, 2]) / 2;  // x center
-			y[TensorIndex.Ellipsis, 1] = (x[TensorIndex.Ellipsis, 1] + x[TensorIndex.Ellipsis, 3]) / 2;// y center
-			y[TensorIndex.Ellipsis, 2] = (x[TensorIndex.Ellipsis, 2] - x[TensorIndex.Ellipsis, 0]);  // width
-			y[TensorIndex.Ellipsis, 3] = (x[TensorIndex.Ellipsis, 3] - x[TensorIndex.Ellipsis, 1]);  // height
-			return y;
-		}
-
-		public class Yolov5Predict : Module<Tensor, Tensor>
-		{
-			private readonly float PredictThreshold = 0.25f;
-			private readonly float IouThreshold = 0.5f;
-			public Yolov5Predict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f) : base("predict")
+			public Yolov5Predict() : base("predict")
 			{
-				this.PredictThreshold = PredictThreshold;
-				this.IouThreshold = IouThreshold;
+
 			}
 
-			public override Tensor forward(Tensor tensor)
+			public override Tensor forward(Tensor tensor, float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
 			{
 				var re = NonMaxSuppression(tensor, PredictThreshold, IouThreshold);
 
@@ -87,7 +63,7 @@ namespace YoloSharp
 					x[TensorIndex.Ellipsis, TensorIndex.Slice(5, mi)] *= x[TensorIndex.Ellipsis, 4].unsqueeze(-1); // conf = obj_conf * cls_conf
 
 					// Box/Mask
-					var box = XYWH2XYXY(x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]); // center_x, center_y, width, height) to (x1, y1, x2, y2)
+					var box = torchvision.ops.box_convert(x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)], torchvision.ops.BoxFormats.cxcywh, torchvision.ops.BoxFormats.xyxy); // center_x, center_y, width, height) to (x1, y1, x2, y2)
 
 					// Detections matrix nx6 (xyxy, conf, cls)
 
@@ -111,7 +87,7 @@ namespace YoloSharp
 					i = i[TensorIndex.Slice(0, max_det)]; // limit detections
 
 					output[xi] = x[i];
-					output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = XYXY2XYWH(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]);
+					output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = torchvision.ops.box_convert(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)], torchvision.ops.BoxFormats.xyxy,torchvision.ops.BoxFormats.cxcywh);
 
 					if ((DateTime.Now - t).TotalSeconds > time_limit)
 					{
@@ -124,18 +100,14 @@ namespace YoloSharp
 			}
 		}
 
-		public class YoloPredict  : Module<Tensor, Tensor>
+		public class YoloPredict : Module<Tensor, float, float, Tensor>
 		{
-			private readonly float PredictThreshold = 0.25f;
-			private readonly float IouThreshold = 0.5f;
-
-			public YoloPredict(float PredictThreshold = 0.25f, float IouThreshold = 0.5f):base("predict")
+			public YoloPredict() : base("predict")
 			{
-				this.PredictThreshold = PredictThreshold;
-				this.IouThreshold = IouThreshold;
+
 			}
 
-			public override Tensor forward(Tensor tensor)
+			public override Tensor forward(Tensor tensor, float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
 			{
 				var re = NonMaxSuppression(tensor, PredictThreshold, IouThreshold);
 
@@ -184,7 +156,7 @@ namespace YoloSharp
 					x = x[xc[xi]]; // confidence
 
 					// Box/Mask
-					var box = XYWH2XYXY(x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]); // center_x, center_y, width, height) to (x1, y1, x2, y2)
+					var box = torchvision.ops.box_convert(x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)], torchvision.ops.BoxFormats.cxcywh, torchvision.ops.BoxFormats.xyxy); // center_x, center_y, width, height) to (x1, y1, x2, y2)
 
 					// Detections matrix nx6 (xyxy, conf, cls)
 
@@ -204,11 +176,11 @@ namespace YoloSharp
 					var c = x[TensorIndex.Ellipsis, 5].unsqueeze(-1) * (agnostic ? 0 : max_wh); // classes
 					var boxes = x[TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] + c;
 					var scores = x[TensorIndex.Ellipsis, 4];
-					var i = torchvision.ops.nms(boxes, scores, iouThreshold); // NMS
+					var i = torchvision.ops.nms(boxes.@float(), scores.@float(), iouThreshold); // NMS
 					i = i[TensorIndex.Slice(0, max_det)]; // limit detections
 
 					output[xi] = x[i];
-					output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = XYXY2XYWH(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)]);
+					output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = torchvision.ops.box_convert(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)],torchvision.ops.BoxFormats.xyxy,torchvision.ops.BoxFormats.cxcywh);
 
 					if ((DateTime.Now - t).TotalSeconds > time_limit)
 					{

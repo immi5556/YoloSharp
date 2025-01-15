@@ -29,6 +29,7 @@ Requires reference to one of libtorch-cpu, libtorch-cuda-12.1, libtorch-cuda-12.
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
     <PackageReference Include="TorchSharp" Version="0.105.0" />
     <PackageReference Include="TorchVision" Version="0.105.0" />
