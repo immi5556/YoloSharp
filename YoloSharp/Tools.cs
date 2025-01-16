@@ -1,6 +1,4 @@
-﻿using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text;
 using TorchSharp;
 using static TorchSharp.torch;
@@ -10,9 +8,13 @@ namespace YoloSharp
 {
 	internal class Tools
 	{
-
-
-		public static void TransModelFromSafetensors( Module<Tensor, Tensor[]> model, string safetensorName,string outName)
+		/// <summary>
+		/// Load weight from safetensors and write it to disk.
+		/// </summary>
+		/// <param name="model">Model in TorchSharp</param>
+		/// <param name="safetensorName">safetensors file</param>
+		/// <param name="outName">file to write on disk</param>
+		public static void TransModelFromSafetensors(Module<Tensor, Tensor[]> model, string safetensorName, string outName)
 		{
 			Dictionary<string, Tensor> dict = new Dictionary<string, Tensor>();
 			SafetensorsLoader safetensorLoader = new SafetensorsLoader();
@@ -33,6 +35,11 @@ namespace YoloSharp
 			model.save(outName);
 		}
 
+		/// <summary>
+		/// Load Python .pt tensor file
+		/// </summary>
+		/// <param name="path">tensor path</param>
+		/// <returns>Tensor in TorchSharp</returns>
 		public static Tensor LoadTensorFromPT(string path)
 		{
 			torch.ScalarType dtype = torch.ScalarType.Float32;
@@ -94,6 +101,12 @@ namespace YoloSharp
 			return tensor;
 		}
 
+		/// <summary>
+		/// Load Python .pt tensor file and change dtype and device the same as given tensor.
+		/// </summary>
+		/// <param name="path">tensor path</param>
+		/// <param name="tensor">the given tensor</param>
+		/// <returns>Tensor in TorchSharp</returns>
 		public static Tensor LoadTensorFromPT(string path, Tensor tensor)
 		{
 			return LoadTensorFromPT(path).to(tensor.dtype, tensor.device);

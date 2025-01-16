@@ -100,7 +100,7 @@ namespace YoloSharp
 
 			var ind = torch.zeros(2, bs, n_max_boxes, dtype: torch.int64, device: gt_labels.device);
 			ind[0] = torch.arange(bs, dtype: torch.int64, device: gt_labels.device).view(-1, 1).expand(-1, n_max_boxes);
-			ind[1] = gt_labels.squeeze();
+			ind[1] = gt_labels.squeeze(-1);
 
 
 			Tensor pd_scores_selected = torch.zeros(this.bs, n_max_boxes, na, dtype: pd_scores.dtype, device: pd_scores.device);
