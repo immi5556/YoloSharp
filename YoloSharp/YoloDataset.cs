@@ -73,7 +73,7 @@ namespace YoloSharp
 		{
 			using var _ = NewDisposeScope();
 			string file = imageFiles[(int)index];
-			Tensor orgImageTensor = torchvision.io.read_image(file).to(device);
+			Tensor orgImageTensor = torchvision.io.read_image(file, torchvision.io.ImageReadMode.RGB).to(device);
 			var (imgTensor, _, _) = Letterbox(orgImageTensor, imageSize, imageSize);
 			Tensor lb = GetLetterBoxLabelTensor(index);
 			return (imgTensor.unsqueeze(0).MoveToOuterDisposeScope(), lb.to(imgTensor.device).MoveToOuterDisposeScope());
@@ -249,7 +249,7 @@ namespace YoloSharp
 
 		public Tensor GetOrgImage(long index)
 		{
-			return torchvision.io.read_image(imageFiles[(int)index]);
+			return torchvision.io.read_image(imageFiles[(int)index], torchvision.io.ImageReadMode.RGB);
 		}
 
 		public (Tensor, Tensor) load_mosaic(long index)
