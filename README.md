@@ -29,7 +29,7 @@ You can download yolov5/yolov8 pre-trained models here.
 
 You can download the code or add it from nuget.
 
-    dotnet add package IntptrMax.YoloSharp --version 1.1.0
+    dotnet add package IntptrMax.YoloSharp --version 1.1.1
 
 In your code you can use it as below.
 
@@ -72,3 +72,5 @@ You can use it with the code below:
     var (predictResult, bitmap) = segmenter.ImagePredict(testBitmap, predictThreshold, iouThreshold);
 
 Use yolov8n-seg pre-trained model to detect.
+
+![pred_seg](https://github.com/user-attachments/assets/898f4e75-e99d-434a-b910-1d87aabe4cb0)
