@@ -38,10 +38,10 @@ namespace YoloSharp
 				throw new ArgumentException("Segmenter not support yolov5. Please use yolov8 or yolov11 instead.");
 			}
 
-			this.device = new torch.Device((TorchSharp.DeviceType)DeviceType.CUDA);
-			this.dtype = (torch.ScalarType)ScalarType.Float32;
-			this.socrCount = 80;
-			this.yoloType = YoloType.Yolov8;
+			this.device = new torch.Device((TorchSharp.DeviceType)deviceType);
+			this.dtype = (torch.ScalarType)dtype;
+			this.socrCount = socrCount;
+			this.yoloType = yoloType;
 			yolo = yoloType switch
 			{
 				YoloType.Yolov8 => new Yolov8Segment(socrCount, yoloSize),
@@ -378,13 +378,14 @@ namespace YoloSharp
 
 		private Tensor process_mask(Tensor protos, Tensor masks_in, Tensor bboxes, long[] shape, bool upsample = false)
 		{
+			using var _ = NewDisposeScope();
 			long c = protos.shape[0]; //  # CHW
 			long mh = protos.shape[1];
 			long mw = protos.shape[2];
 
 			long ih = shape[0];
 			long iw = shape[1];
-			Tensor protos_reshaped = protos.@float().view(c, -1);
+			Tensor protos_reshaped = protos.view(c, -1);
 			Tensor masks = masks_in.matmul(protos_reshaped);  //  # CHW
 			masks = masks.view(-1, mh, mw);
 			float width_ratio = (float)mw / iw;
@@ -401,20 +402,19 @@ namespace YoloSharp
 			{
 				masks = torch.nn.functional.interpolate(masks[TensorIndex.None], size: shape, mode: InterpolationMode.Bilinear, align_corners: false)[0];// # CHW
 			}
-			return masks.gt_(0.0);
+			return masks.gt_(0.0).MoveToOuterDisposeScope();
 
 		}
+
+		/// <summary>
+		/// It takes a mask and a bounding box, and returns a mask that is cropped to the bounding box.
+		/// </summary>
+		/// <param name="masks">[n, h, w] tensor of masks</param>
+		/// <param name="boxes">[n, 4] tensor of bbox coordinates in relative point form</param>
+		/// <returns>The masks are being cropped to the bounding box.</returns>
 		private Tensor crop_mask(Tensor masks, Tensor boxes)
 		{
-			//It takes a mask and a bounding box, and returns a mask that is cropped to the bounding box.
-
-			//Args:
-			//    masks (torch.Tensor): [n, h, w] tensor of masks
-			//    boxes (torch.Tensor): [n, 4] tensor of bbox coordinates in relative point form
-
-			//Returns:
-			//    (torch.Tensor): The masks are being cropped to the bounding box.
-
+			using var _ = NewDisposeScope();
 			long h = masks.shape[1];
 			long w = masks.shape[2];
 			Tensor[] x1y1x2y2 = torch.chunk(boxes[.., .., TensorIndex.None], 4, 1);  // x1 shape(n,1,1)
@@ -425,8 +425,7 @@ namespace YoloSharp
 			Tensor r = torch.arange(w, device: masks.device, dtype: x1.dtype)[TensorIndex.None, TensorIndex.None, ..];  // rows shape(1,1,w)
 			Tensor c = torch.arange(h, device: masks.device, dtype: x1.dtype)[TensorIndex.None, .., TensorIndex.None];  // cols shape(1,h,1)
 
-
-			return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2));
+			return (masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))).MoveToOuterDisposeScope();
 		}
 
 	}

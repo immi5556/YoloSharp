@@ -23,23 +23,21 @@ namespace YoloSharpDemo
 			ScalarType dtype = ScalarType.Float32;
 			YoloSize yoloSize = YoloSize.n;
 
-			// Create predictor
-			// Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+			//// Create predictor
+			//Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
 
-			// Train model
+			//// Train model
 			//predictor.LoadModel(preTraindModelPath, skipNcNotEqualLayers: true);
 			//predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
 
-			// ImagePredict image
-			// Bitmap bitmap = new Bitmap(predictImagePath);
+			////ImagePredict image
+			//Bitmap bitmap = new Bitmap(predictImagePath);
 			//predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
-			//predictor.LoadModel(preTraindModelPath);
 			//var predictResult = predictor.ImagePredict(bitmap, predictThreshold, iouThreshold);
 
 			// Create segmenter
-
 			Segmenter segmenter = new Segmenter(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
-			segmenter.LoadModel(preTraindModelPath);
+			segmenter.LoadModel(preTraindModelPath,skipNcNotEqualLayers:true);
 
 			segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
 			segmenter.LoadModel("output/best.bin");

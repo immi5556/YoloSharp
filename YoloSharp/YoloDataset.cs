@@ -11,6 +11,7 @@ namespace YoloSharp
 		private List<string> imageFiles = new List<string>();
 		private bool useMosaic = true;
 		private Device device;
+		private int[] mosaic_border = [-320, -320];
 
 		public YoloDataset(string rootPath, int imageSize = 640, bool useMosaic = true, TorchSharp.DeviceType deviceType = TorchSharp.DeviceType.CUDA)
 		{
@@ -102,7 +103,8 @@ namespace YoloSharp
 		{
 			if (useMosaic)
 			{
-				Console.WriteLine("Mosaic is not supported now, it will come latter ...");
+				Console.WriteLine("Mosaic method are not support now, it will come soon.");
+				//load_mosaic(index);
 			}
 			return GetLetterBoxSegmentData(index);
 		}
@@ -252,10 +254,14 @@ namespace YoloSharp
 			return torchvision.io.read_image(imageFiles[(int)index], torchvision.io.ImageReadMode.RGB);
 		}
 
+		/// <summary>
+		/// Loads a 4-image mosaic for YOLO, combining 1 selected and 3 random images, with labels and segments.
+		/// </summary>
+		/// <param name="index">The index in datasets</param>
+		/// <returns></returns>
 		public (Tensor, Tensor) load_mosaic(long index)
 		{
 			using var _ = NewDisposeScope();
-			int[] mosaic_border = [-320, -320];
 			long[] indexs = Sample(index, 0, (int)Count, 4);
 			Random random = new Random();
 			int xc = random.Next(-mosaic_border[0], 2 * imageSize + mosaic_border[0]);
@@ -330,6 +336,14 @@ namespace YoloSharp
 			return ResizeImage(image, targetSize, targetSize);
 		}
 
+		/// <summary>
+		/// Get several random numbers between min and max, and contains orgIndex.
+		/// </summary>
+		/// <param name="orgIndex"></param>
+		/// <param name="min"></param>
+		/// <param name="max"></param>
+		/// <param name="count"></param>
+		/// <returns></returns>
 		private long[] Sample(long orgIndex, int min, int max, int count)
 		{
 			Random random = new Random();
@@ -355,10 +369,18 @@ namespace YoloSharp
 			return list.ToArray();
 		}
 
+		/// <summary>
+		/// Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right.
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="w"></param>
+		/// <param name="h"></param>
+		/// <param name="padw"></param>
+		/// <param name="padh"></param>
+		/// <returns></returns>
 		private Tensor xywhn2xyxy(Tensor x, int w = 640, int h = 640, int padw = 0, int padh = 0)
 		{
 			using var _ = NewDisposeScope();
-			//"""Convert nx4 boxes from [x, y, w, h] normalized to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right."""
 			Tensor y = x.clone();
 			y[TensorIndex.Ellipsis, 0] = w * (x[TensorIndex.Ellipsis, 0] - x[TensorIndex.Ellipsis, 2] / 2) + padw;  // top left x
 			y[TensorIndex.Ellipsis, 1] = h * (x[TensorIndex.Ellipsis, 1] - x[TensorIndex.Ellipsis, 3] / 2) + padh;  // top left y
@@ -367,10 +389,18 @@ namespace YoloSharp
 			return y.MoveToOuterDisposeScope();
 		}
 
+		/// <summary>
+		/// Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] normalized where xy1=top-left, xy2=bottom-right.
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="w"></param>
+		/// <param name="h"></param>
+		/// <param name="clip"></param>
+		/// <param name="eps"></param>
+		/// <returns></returns>
 		private Tensor xyxy2xywhn(Tensor x, int w = 640, int h = 640, bool clip = false, float eps = 0.0f)
 		{
 			using var _ = NewDisposeScope();
-			// Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] normalized where xy1=top-left, xy2=bottom-right.
 			if (clip)
 			{
 				x = Lib.ClipBox(x, [h - eps, w - eps]);
@@ -489,6 +519,61 @@ namespace YoloSharp
 				if (perspective != 0)
 				{
 					//im = WarpPerspective(im, M, width, height, (114, 114, 114));
+
+					// 定义原始图像的四个角点
+					var corners = tensor(new float[,]
+										{{ 0, 0, 1 },					// 左上
+										{ width - 1, 0, 1 },			// 右上
+										{ 0, height - 1, 1 },			// 左下
+										{ width - 1, height - 1, 1 }	// 右下
+										}).to(device);
+
+					// 将角点与变换矩阵 M 相乘
+					var transformedCorners = corners.matmul(M.T);
+
+					// 透视变换后，需要将齐次坐标归一化
+					transformedCorners = transformedCorners[TensorIndex.Ellipsis, 0..2] / transformedCorners[TensorIndex.Ellipsis, 2..3];
+
+					// 提取变换后的四个角点
+					var topLeft = transformedCorners[0];      // 左上
+					var topRight = transformedCorners[1];     // 右上
+					var bottomLeft = transformedCorners[2];   // 左下
+					var bottomRight = transformedCorners[3];  // 右下
+
+					// 定义填充颜色 (R, G, B)
+					var fillColor = new List<float> { 114, 114, 114 };
+
+					// 定义原始图像的四个角点
+					var startpoints = new List<List<int>>
+									{
+										new List<int> { 0, 0 },					// 左上
+										new List<int> { width - 1, 0 },			// 右上
+										new List<int> { 0, height - 1 },		// 左下
+										new List<int> { width - 1, height - 1 } // 右下
+									};
+
+					// 定义变换后的四个角点
+					List<List<int>> endpoints = new List<List<int>>
+									{
+										new List<int> { transformedCorners[0, 0].ToInt32(), transformedCorners[0, 1].ToInt32() }, // 左上
+										new List<int> { transformedCorners[1, 0].ToInt32(), transformedCorners[1, 1].ToInt32() }, // 右上
+										new List<int> { transformedCorners[2, 0].ToInt32(), transformedCorners[2, 1].ToInt32() }, // 左下
+										new List<int> { transformedCorners[3, 0].ToInt32(), transformedCorners[3, 1].ToInt32() }  // 右下
+									};
+
+					// 显式转换为 IList<IList<int>>
+					IList<IList<int>> startpointsIList = startpoints.Select(list => (IList<int>)list).ToList();
+					IList<IList<int>> endpointsIList = endpoints.Select(list => (IList<int>)list).ToList();
+
+					// 调用透视变换函数
+					im = torchvision.transforms.functional.perspective(
+						im,							// 输入图像
+						startpointsIList,           // 原始图像的四个角点
+						endpointsIList,             // 变换后的四个角点
+						InterpolationMode.Bilinear, // 插值方式
+						fillColor					// 填充颜色
+					);
+
 				}
 				else
 				{
@@ -544,15 +629,19 @@ namespace YoloSharp
 			return R.MoveToOuterDisposeScope();
 		}
 
+		/// <summary>
+		/// Filters bounding box candidates by minimum width-height threshold `wh_thr` (pixels), aspect ratio threshold `ar_thr`, and area ratio threshold `area_thr`.
+		/// </summary>
+		/// <param name="box1">(4,n) is before augmentation</param>
+		/// <param name="box2">(4,n) is after augmentation</param>
+		/// <param name="wh_thr"></param>
+		/// <param name="ar_thr"></param>
+		/// <param name="area_thr"></param>
+		/// <param name="eps"></param>
+		/// <returns></returns>
 		private Tensor box_candidates(Tensor box1, Tensor box2, float wh_thr = 2, float ar_thr = 100, float area_thr = 0.1f, double eps = 1e-16)
 		{
 			using var _ = NewDisposeScope();
-			/*
-			Filters bounding box candidates by minimum width-height threshold `wh_thr` (pixels), aspect ratio threshold
-			`ar_thr`, and area ratio threshold `area_thr`.
-			box1(4,n) is before augmentation, box2(4,n) is after augmentation.
-			*/
-
 			var (w1, h1) = (box1[2] - box1[0], box1[3] - box1[1]);
 			var (w2, h2) = (box2[2] - box2[0], box2[3] - box2[1]);
 			var ar = maximum(w2 / (h2 + eps), h2 / (w2 + eps)); // aspect ratio

@@ -1,12 +1,7 @@
-﻿using ICSharpCode.SharpZipLib.GZip;
-using System.Threading.Tasks;
-using TorchSharp;
+﻿using TorchSharp;
 using TorchSharp.Modules;
-using static Tensorboard.CostGraphDef.Types;
-using static Tensorboard.TensorShapeProto.Types;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
-using static YoloSharp.Modules;
 
 namespace YoloSharp
 {
@@ -749,10 +744,9 @@ namespace YoloSharp
 			}
 			public override (Tensor, Tensor) forward(Tensor[] preds, Tensor targets, Tensor masks)
 			{
-				//this.device = preds[0].device;
-				//this.dtype = preds[0].dtype;
-				this.device = CUDA;
-				this.dtype = torch.ScalarType.Float32;
+				using var _ = NewDisposeScope();
+				this.device = preds[0].device;
+				this.dtype = preds[0].dtype;
 
 				Tensor loss = torch.zeros(4).to(this.device);  // box, cls, dfl
 				Tensor[] feats = [preds[0], preds[1], preds[2]];
@@ -779,11 +773,9 @@ namespace YoloSharp
 
 				// Select elements from imgsz
 				var scale_tensor = torch.index_select(imgsz, 0, indices).to(device);
-				long pp = targets.shape[0];
 				var tgs = postprocess(targets, batch_size, scale_tensor);
 				Tensor[] gt_labels_bboxes = tgs.split([1, 4], 2);  // cls, xyxy
 				Tensor gt_labels = gt_labels_bboxes[0];
-				long p = gt_labels.shape[1];
 				Tensor gt_bboxes = gt_labels_bboxes[1];
 				Tensor mask_gt = gt_bboxes.sum(2, keepdim: true).gt_(0.0);
 
@@ -797,12 +789,7 @@ namespace YoloSharp
 				if (fg_mask.sum().ToDouble() > 0)
 				{
 					(loss[0], loss[3]) = new BboxLoss().forward(pred_distri, pred_bboxes, anchor_points, target_bboxes / stride_tensor, target_scores, target_scores_sum, fg_mask);
-
-					//Tensor masks = Tools.LoadTensorFromPT(@"D:\DeepLearning\yolo\ultralytics\masks.pt").cuda();
-					//Tensor batch_idx = Tools.LoadTensorFromPT(@"D:\DeepLearning\yolo\ultralytics\batch_idx.pt").cuda();
-
 					loss[1] = calculate_segmentation_loss(fg_mask, masks, target_gt_idx, target_bboxes, /*batch_idx,*/ proto, pred_masks, imgsz, this.over_laps);
-
 				}
 
 				loss[0] *= this.hyp_box;    // box gain
@@ -810,7 +797,7 @@ namespace YoloSharp
 				loss[2] *= this.hyp_cls;    // cls gain
 				loss[3] *= this.hyp_dfl;    // dfl gain
 
-				return (loss.sum() * batch_size, loss.detach());    // loss(box, cls, dfl)
+				return ((loss.sum() * batch_size).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());    // loss(box, cls, dfl)
 
 			}
 
@@ -890,6 +877,7 @@ namespace YoloSharp
 				return xyxy.MoveToOuterDisposeScope();
 			}
 
+
 			private Tensor xyxy2xywh(Tensor x)
 			{
 				//Convert bounding box coordinates from (x1, y1, x2, y2) format to (x, y, width, height) format where (x1, y1) is the
@@ -940,30 +928,26 @@ namespace YoloSharp
 				return torch.cat([x1y1, x2y2], dim).MoveToOuterDisposeScope(); // xyxy bbox
 			}
 
+			/// <summary>
+			/// Calculate the loss for instance segmentation.
+			/// <para>Notes:<br/>
+			///    The batch loss can be computed for improved speed at higher memory usage.<br/>
+			///    For example, pred_mask can be computed as follows:<br/>
+			///    pred_mask = torch.einsum('in,nhw->ihw', pred, proto)  # (i, 32) @ (32, 160, 160) -> (i, 160, 160)
+			/// </para>
+			/// </summary>
+			/// <param name="fg_mask">A binary tensor of shape (BS, N_anchors) indicating which anchors are positive.</param>
+			/// <param name="masks">Ground truth masks of shape (BS, H, W) if `overlap` is False, otherwise (BS, ?, H, W).</param>
+			/// <param name="target_gt_idx">Indexes of ground truth objects for each anchor of shape (BS, N_anchors).</param>
+			/// <param name="target_bboxes">Ground truth bounding boxes for each anchor of shape (BS, N_anchors, 4).</param>
+			/// <param name="proto">Prototype masks of shape (BS, 32, H, W).</param>
+			/// <param name="pred_masks">Predicted masks for each anchor of shape (BS, N_anchors, 32).</param>
+			/// <param name="imgsz">Size of the input image as a tensor of shape (2), i.e., (H, W).</param>
+			/// <param name="overlap">Whether the masks in `masks` tensor overlap.</param>
+			/// <returns>The calculated loss for instance segmentation.</returns>
 			private Tensor calculate_segmentation_loss(Tensor fg_mask, Tensor masks, Tensor target_gt_idx, Tensor target_bboxes,/* torch.Tensor batch_idx,*/ torch.Tensor proto, torch.Tensor pred_masks, torch.Tensor imgsz, bool overlap)
 			{
-				//Calculate the loss for instance segmentation.
-
-				//Args:
-				//    fg_mask (torch.Tensor): A binary tensor of shape (BS, N_anchors) indicating which anchors are positive.
-				//    masks (torch.Tensor): Ground truth masks of shape (BS, H, W) if `overlap` is False, otherwise (BS, ?, H, W).
-				//    target_gt_idx (torch.Tensor): Indexes of ground truth objects for each anchor of shape (BS, N_anchors).
-				//    target_bboxes (torch.Tensor): Ground truth bounding boxes for each anchor of shape (BS, N_anchors, 4).
-				//    batch_idx (torch.Tensor): Batch indices of shape (N_labels_in_batch, 1).
-				//    proto (torch.Tensor): Prototype masks of shape (BS, 32, H, W).
-				//    pred_masks (torch.Tensor): Predicted masks for each anchor of shape (BS, N_anchors, 32).
-				//    imgsz (torch.Tensor): Size of the input image as a tensor of shape (2), i.e., (H, W).
-				//    overlap (bool): Whether the masks in `masks` tensor overlap.
-
-				//Returns:
-				//    (torch.Tensor): The calculated loss for instance segmentation.
-
-				//Notes:
-				//    The batch loss can be computed for improved speed at higher memory usage.
-				//    For example, pred_mask can be computed as follows:
-				//        pred_mask = torch.einsum('in,nhw->ihw', pred, proto)  # (i, 32) @ (32, 160, 160) -> (i, 160, 160)
-
-
+				using var _ = NewDisposeScope();
 				long mask_h = proto.shape[2];
 				long mask_w = proto.shape[3];
 				Tensor loss = 0;
@@ -976,7 +960,8 @@ namespace YoloSharp
 				Tensor target_bboxes_normalized = target_bboxes / scale_tensor;
 
 				// Areas of target bboxes
-				Tensor marea = xyxy2xywh(target_bboxes_normalized)[TensorIndex.Ellipsis, 2..].prod(2);
+				//Tensor marea = xyxy2xywh(target_bboxes_normalized)[TensorIndex.Ellipsis, 2..].prod(2);
+				Tensor marea = torchvision.ops.box_convert(target_bboxes_normalized, torchvision.ops.BoxFormats.xyxy, torchvision.ops.BoxFormats.cxcywh)[TensorIndex.Ellipsis, 2..].prod(2);
 
 				// Normalize to mask size
 				Tensor mxyxy = target_bboxes_normalized * torch.tensor(new long[] { mask_w, mask_h, mask_w, mask_h }, device: proto.device);
@@ -1000,47 +985,39 @@ namespace YoloSharp
 						loss += single_mask_loss(gt_mask, pred_masks[i][fg_mask[i]], proto[i], mxyxy[i][fg_mask[i]], marea[i][fg_mask[i]]);
 					}
 				}
-				return loss / fg_mask.sum();
+				return (loss / fg_mask.sum()).MoveToOuterDisposeScope();
 			}
 
+			/// <summary>
+			/// Compute the instance segmentation loss for a single image.
+			/// <para>Notes:<br/>
+			///    The function uses the equation pred_mask = torch.einsum('in,nhw->ihw', pred, proto) to produce the<br/>
+			///    predicted masks from the prototype masks and predicted mask coefficients.<br/>
+			/// </para>
+			/// </summary>
+			/// <param name="gt_mask">Ground truth mask of shape (n, H, W), where n is the number of objects.</param>
+			/// <param name="pred">Predicted mask coefficients of shape (n, 32).</param>
+			/// <param name="proto">Prototype masks of shape (32, H, W).</param>
+			/// <param name="xyxy"> Ground truth bounding boxes in xyxy format, normalized to [0, 1], of shape (n, 4).</param>
+			/// <param name="area"> Area of each ground truth bounding box of shape (n,).</param>
+			/// <returns>The calculated mask loss for a single image.</returns>
 			private Tensor single_mask_loss(Tensor gt_mask, torch.Tensor pred, torch.Tensor proto, torch.Tensor xyxy, torch.Tensor area)
 			{
-				//Compute the instance segmentation loss for a single image.
-
-				//Args:
-				//    gt_mask (torch.Tensor): Ground truth mask of shape (n, H, W), where n is the number of objects.
-				//    pred (torch.Tensor): Predicted mask coefficients of shape (n, 32).
-				//    proto (torch.Tensor): Prototype masks of shape (32, H, W).
-				//    xyxy (torch.Tensor): Ground truth bounding boxes in xyxy format, normalized to [0, 1], of shape (n, 4).
-				//    area (torch.Tensor): Area of each ground truth bounding box of shape (n,).
-
-				//Returns:
-				//    (torch.Tensor): The calculated mask loss for a single image.
-
-				//Notes:
-				//    The function uses the equation pred_mask = torch.einsum('in,nhw->ihw', pred, proto) to produce the
-				//    predicted masks from the prototype masks and predicted mask coefficients.
-
-
+				using var _ = NewDisposeScope();
 				Tensor pred_mask = torch.einsum("in,nhw->ihw", pred, proto); //(n, 32) @ (32, 80, 80) -> (n, 80, 80)
 				Tensor loss = torch.nn.functional.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction: Reduction.None);
-
-				return (crop_mask(loss, xyxy).mean(dimensions: [1, 2]) / area).sum();
-
+				return (crop_mask(loss, xyxy).mean(dimensions: [1, 2]) / area).sum().MoveToOuterDisposeScope();
 			}
 
+			/// <summary>
+			/// It takes a mask and a bounding box, and returns a mask that is cropped to the bounding box.
+			/// </summary>
+			/// <param name="masks">[n, h, w] tensor of masks</param>
+			/// <param name="boxes">[n, 4] tensor of bbox coordinates in relative point form</param>
+			/// <returns>The masks are being cropped to the bounding box.</returns>
 			private Tensor crop_mask(Tensor masks, Tensor boxes)
 			{
-				//It takes a mask and a bounding box, and returns a mask that is cropped to the bounding box.
-
-				//Args:
-				//    masks (torch.Tensor): [n, h, w] tensor of masks
-				//    boxes (torch.Tensor): [n, 4] tensor of bbox coordinates in relative point form
-
-				//Returns:
-				//    (torch.Tensor): The masks are being cropped to the bounding box.
-
-
+				using var _ = NewDisposeScope();
 				long h = masks.shape[1];
 				long w = masks.shape[2];
 				Tensor[] x1y1x2y2 = torch.chunk(boxes[.., .., TensorIndex.None], 4, 1);  // x1 shape(n,1,1)
@@ -1050,9 +1027,7 @@ namespace YoloSharp
 				Tensor y2 = x1y1x2y2[3];
 				Tensor r = torch.arange(w, device: masks.device, dtype: x1.dtype)[TensorIndex.None, TensorIndex.None, ..]; //rows shape(1,1,w)
 				Tensor c = torch.arange(h, device: masks.device, dtype: x1.dtype)[TensorIndex.None, .., TensorIndex.None]; //cols shape(1,h,1)
-
-
-				return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2));
+				return (masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))).MoveToOuterDisposeScope();
 			}
 		}
 	}
