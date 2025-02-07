@@ -10,7 +10,7 @@ namespace YoloSharpDemo
 			string trainDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // Training data path, it should be the same as coco dataset.
 			string valDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // If valDataPath is "", it will use trainDataPath as validation data.
 			string outputPath = "result";    // Trained model output path.
-			string preTraindModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n-seg.bin"; // Pretrained model path.
+			string preTraindModelPath = @"..\..\..\Assets\PreTrainedModels\yolov11n-seg.bin"; // Pretrained model path.
 			string predictImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
 			int batchSize = 16;
 			int sortCount = 80;
@@ -18,7 +18,7 @@ namespace YoloSharpDemo
 			float predictThreshold = 0.5f;
 			float iouThreshold = 0.45f;
 
-			YoloType yoloType = YoloType.Yolov8;
+			YoloType yoloType = YoloType.Yolov11;
 			DeviceType deviceType = DeviceType.CUDA;
 			ScalarType dtype = ScalarType.Float32;
 			YoloSize yoloSize = YoloSize.n;
@@ -28,7 +28,7 @@ namespace YoloSharpDemo
 
 			//// Train model
 			//predictor.LoadModel(preTraindModelPath, skipNcNotEqualLayers: true);
-			//predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
+			//predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: true);
 
 			////ImagePredict image
 			//Bitmap bitmap = new Bitmap(predictImagePath);
@@ -37,7 +37,7 @@ namespace YoloSharpDemo
 
 			// Create segmenter
 			Segmenter segmenter = new Segmenter(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
-			segmenter.LoadModel(preTraindModelPath,skipNcNotEqualLayers:true);
+			segmenter.LoadModel(preTraindModelPath, skipNcNotEqualLayers: true);
 
 			segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
 			segmenter.LoadModel("output/best.bin");

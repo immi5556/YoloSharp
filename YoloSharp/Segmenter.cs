@@ -72,6 +72,7 @@ namespace YoloSharp
 			DataLoader trainDataLoader = new DataLoader(trainDataSet, batchSize, num_worker: numWorkers, shuffle: true, device: device);
 			valDataPath = string.IsNullOrEmpty(valDataPath) ? trainDataPath : valDataPath;
 			Optimizer optimizer = new SGD(yolo.parameters(), lr: lr);
+
 			float tempLoss = float.MaxValue;
 			Console.WriteLine("Start Training...");
 			yolo.train(true);
@@ -275,7 +276,7 @@ namespace YoloSharp
 						case YoloType.Yolov11:
 							{
 								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.23.cv3")).ToList();
-								nc = state_dict[skipList[0]].shape[0];
+								nc = state_dict[skipList[3]].shape[0];
 								break;
 							}
 						default:

@@ -18,6 +18,9 @@ With the help of this project you won't have to transform .pt model to onnx, and
 
 You can download yolov5/yolov8 pre-trained models here.
 
+<details>
+  <summary>Prediction Checkpoints</summary>
+
 | model | n| s | m | l | x |
 | --- | ----------- | ----------- | ----------- | ----------- | ----------- |
 | yolov5 | [yolov5n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov5n.bin) | [yolov5s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov5s.bin) | [yolov5m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov5m.bin) | [yolov5l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov5l.bin) | [yolov5x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov5x.bin) |
@@ -25,11 +28,23 @@ You can download yolov5/yolov8 pre-trained models here.
 | yolov8 | [yolov8n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8n.bin) | [yolov8s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8s.bin) | [yolov8m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8m.bin) | [yolov8l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8l.bin) | [yolov8x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8x.bin) |
 | yolov11 | [yolov11n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11n.bin) | [yolov11s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11s.bin) | [yolov11m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11m.bin) | [yolov11l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11l.bin) | [yolov11x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11x.bin) |
 
+</details>
+
+<details>
+  <summary>Segmention Checkpoints</summary>
+
+| model | n| s | m | l | x |
+| --- | ----------- | ----------- | ----------- | ----------- | ----------- |
+| yolov8 | [yolov8n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8n.bin) | [yolov8s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8s.bin) | [yolov8m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8m.bin) | [yolov8l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8l.bin) | [yolov8x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov8x.bin) |
+| yolov11 | [yolov11n](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11n.bin) | [yolov11s](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11s.bin) | [yolov11m](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11m.bin) | [yolov11l](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11l.bin) | [yolov11x](https://github.com/IntptrMax/YoloSharp/releases/download/v1.0.4/Yolov11x.bin) |
+
+</details>
+
 ## How to use
 
 You can download the code or add it from nuget.
 
-    dotnet add package IntptrMax.YoloSharp --version 1.1.1
+    dotnet add package IntptrMax.YoloSharp
 
 In your code you can use it as below.
 
