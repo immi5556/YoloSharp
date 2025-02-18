@@ -15,7 +15,7 @@ namespace YoloSharpDemo
 			int batchSize = 16;
 			int sortCount = 80;
 			int epochs = 100;
-			float predictThreshold = 0.5f;
+			float predictThreshold = 0.9f;
 			float iouThreshold = 0.45f;
 
 			YoloType yoloType = YoloType.Yolov11;

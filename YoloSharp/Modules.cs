@@ -173,8 +173,6 @@ namespace YoloSharp
 			}
 		}
 
-
-
 		public class C3k2 : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
@@ -276,13 +274,13 @@ namespace YoloSharp
 
 		public class PSABlock : Module<Tensor, Tensor>
 		{
-			private readonly Attention attn;
+			private readonly Attention attn; // can use ScaledDotProductAttention instead
 			private readonly Sequential ffn;
 			private readonly bool add;
 
 			public PSABlock(int c, float attn_ratio = 0.5f, int num_heads = 4, bool shortcut = true) : base("PSABlock")
 			{
-				this.attn = new Attention(c, attn_ratio: attn_ratio, num_heads: num_heads);
+				this.attn = new Attention(c); 
 				this.ffn = nn.Sequential(new Conv(c, c * 2, 1), new Conv(c * 2, c, 1, act: false));
 				this.add = shortcut;
 				RegisterComponents();
@@ -348,6 +346,71 @@ namespace YoloSharp
 
 				return x.MoveToOuterDisposeScope();
 
+			}
+		}
+
+
+		public class ScaledDotProductAttention : Module<Tensor, Tensor>
+		{
+			private int num_heads;
+			private int head_dim;
+			private int key_dim;
+
+			private readonly Conv qkv;
+			private readonly Conv proj;
+			private readonly Conv pe;
+
+			public ScaledDotProductAttention(int dim, int num_heads = 8, float attn_ratio = 0.5f) : base("Attention")
+			{
+				this.num_heads = num_heads;
+				this.head_dim = dim / num_heads;
+				this.key_dim = (int)(this.head_dim * attn_ratio);
+
+				int nh_kd = this.key_dim * num_heads;
+				int h = dim + nh_kd * 2;
+
+				this.qkv = new Conv(dim, h, 1, act: false);
+				this.proj = new Conv(dim, dim, 1, act: false);
+				this.pe = new Conv(dim, dim, 3, 1, groups: dim, act: false);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				using var _ = NewDisposeScope();
+				long B = x.shape[0];
+				long C = x.shape[1];
+				long H = x.shape[2];
+				long W = x.shape[3];
+
+				long N = H * W;
+
+				Tensor qkv = this.qkv.forward(x);
+
+				Tensor[] qkv_mix = qkv.view(B, this.num_heads, this.key_dim * 2 + this.head_dim, N).split([this.key_dim, this.key_dim, this.head_dim], dim: 2);
+				Tensor q = qkv_mix[0];
+				Tensor k = qkv_mix[1];
+				Tensor v = qkv_mix[2];
+
+				q = q.transpose(-2, -1); // [B, num_heads, N, key_dim]
+				k = k.transpose(-2, -1); // [B, num_heads, N, key_dim]
+				v = v.transpose(-2, -1); // [B, num_heads, N, head_dim]
+
+				Tensor attn_output = functional.scaled_dot_product_attention(q, k, v);
+
+				attn_output = attn_output.transpose(-2, -1); // [B, num_heads, N, head_dim]
+				attn_output = attn_output.contiguous();
+
+				if (B * this.num_heads * N * this.head_dim != B * C * H * W)
+				{
+					throw new InvalidOperationException("Shape mismatch: Cannot reshape attn_output to [B, C, H, W].");
+				}
+
+				attn_output = attn_output.view(B, C, H, W);
+				x = attn_output + this.pe.forward(v.reshape(B, C, H, W));
+				x = this.proj.forward(x);
+
+				return x.MoveToOuterDisposeScope();
 			}
 		}
 
