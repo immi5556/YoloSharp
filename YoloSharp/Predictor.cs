@@ -43,6 +43,7 @@ namespace YoloSharp
 				YoloType.Yolov5u => new Yolov5u(socrCount, yoloSize),
 				YoloType.Yolov8 => new Yolov8(socrCount, yoloSize),
 				YoloType.Yolov11 => new Yolov11(socrCount, yoloSize),
+				YoloType.Yolov12 => new Yolov12(socrCount, yoloSize),
 				_ => throw new NotImplementedException(),
 			};
 
@@ -54,6 +55,7 @@ namespace YoloSharp
 				YoloType.Yolov5u => new Loss.YoloDetectionLoss(this.socrCount),
 				YoloType.Yolov8 => new Loss.YoloDetectionLoss(this.socrCount),
 				YoloType.Yolov11 => new Loss.YoloDetectionLoss(this.socrCount),
+				YoloType.Yolov12 => new Loss.YoloDetectionLoss(this.socrCount),
 				_ => throw new NotImplementedException(),
 			};
 			loss = loss.to(this.device, this.dtype);
@@ -64,8 +66,10 @@ namespace YoloSharp
 				YoloType.Yolov5u => new Predict.YoloPredict(),
 				YoloType.Yolov8 => new Predict.YoloPredict(),
 				YoloType.Yolov11 => new Predict.YoloPredict(),
+				YoloType.Yolov12 => new Predict.YoloPredict(),
 				_ => throw new NotImplementedException(),
 			};
+
 		}
 
 		public void Train(string trainDataPath, string valDataPath = "", string outputPath = "output", int imageSize = 640, int epochs = 100, float lr = 0.0001f, int batchSize = 8, int numWorkers = 0, bool useMosaic = true)
@@ -257,6 +261,12 @@ namespace YoloSharp
 						case YoloType.Yolov11:
 							{
 								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.23.cv3")).ToList();
+								nc = state_dict[skipList[3]].shape[0];
+								break;
+							}
+						case YoloType.Yolov12:
+							{
+								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.21.cv3")).ToList();
 								nc = state_dict[skipList[3]].shape[0];
 								break;
 							}

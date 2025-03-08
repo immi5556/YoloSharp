@@ -1,4 +1,6 @@
-﻿using TorchSharp.Modules;
+﻿using System.Diagnostics;
+using TorchSharp;
+using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 using static YoloSharp.Modules;
@@ -584,6 +586,150 @@ namespace YoloSharp
 				Tensor p22 = ((Module<Tensor, Tensor>)model[22]).forward(x);
 
 				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward([p16, p19, p22]);
+				for (int i = 0; i < list.Length; i++)
+				{
+					list[i] = list[i].MoveToOuterDisposeScope();
+				}
+				return list;
+			}
+		}
+
+		public class Yolov12 : Module<Tensor, Tensor[]>
+		{
+			ModuleList<Module> model;
+			private int[] strides;
+
+			public Yolov12(int nc = 80, YoloSize yoloSize = YoloSize.n) : base(nameof(Yolov12))
+			{
+				float depth_multiple = 0.5f;
+				float width_multiple = 0.25f;
+				int max_channels = 1024;
+				bool useC3k = false;
+
+				switch (yoloSize)
+				{
+					case YoloSize.n:
+						{
+							depth_multiple = 0.5f;
+							width_multiple = 0.25f;
+							max_channels = 1024;
+							useC3k = false;
+							break;
+						}
+					case YoloSize.s:
+						{
+							depth_multiple = 0.5f;
+							width_multiple = 0.5f;
+							max_channels = 1024;
+							useC3k = false;
+							break;
+						}
+					case YoloSize.m:
+						{
+							depth_multiple = 0.5f;
+							width_multiple = 1.0f;
+							max_channels = 512;
+							useC3k = true;
+							break;
+						}
+					case YoloSize.l:
+						{
+							depth_multiple = 1.0f;
+							width_multiple = 1.0f;
+							max_channels = 512;
+							useC3k = true;
+							break;
+						}
+					case YoloSize.x:
+						{
+							depth_multiple = 1.0f;
+							width_multiple = 1.5f;
+							max_channels = 768;
+							useC3k = true;
+							break;
+						}
+				}
+
+				float p3_d = 8.0f;
+				float p4_d = 16.0f;
+				float p5_d = 32.0f;
+				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
+						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
+						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+
+				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
+				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
+				int widthSize256 = Math.Min((int)(256 * width_multiple), max_channels);
+				int widthSize512 = Math.Min((int)(512 * width_multiple), max_channels);
+				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
+				int depthSize2 = (int)(2 * depth_multiple);
+
+				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				strides = ch;
+
+				model = new ModuleList<Module>(
+					new Conv(3, widthSize64, 3, 2),                                                                     // 0-P1/2
+					new Conv(widthSize64, widthSize128, 3, 2),                                                          // 1-P2/4
+					new C3k2(widthSize128, widthSize256, depthSize2, useC3k, e: 0.25f),
+					new Conv(widthSize256, widthSize256, 3, 2),                                                         // 3-P3/8
+					new C3k2(widthSize256, widthSize512, depthSize2, useC3k, e: 0.25f),
+					new Conv(widthSize512, widthSize512, 3, 2),                                                         // 5-P4/16
+					new A2C2f(widthSize512, widthSize512, n: 2, a2: true, area: 4),
+					new Conv(widthSize512, widthSize1024, 3, 2),                                                        // 7-P5/32
+					new A2C2f(widthSize1024, widthSize1024, n: 2, a2: true, area: 1),
+
+					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					new Concat(),                                                                                       // cat backbone P4
+					new A2C2f(widthSize1024 + widthSize512, widthSize512, n: 1, a2: false, area: -1),                                   // 11
+
+					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					new Concat(),                                                                                       // cat backbone P3
+					new A2C2f(widthSize512 + widthSize512, widthSize256, n: 1, a2: false, area: -1),                                    // 14 (P3/8-small)
+
+					new Conv(widthSize256, widthSize256, 3, 2),
+					new Concat(),                                                                                       // cat head P4
+					new A2C2f(widthSize512 + widthSize256, widthSize512, n: 1, a2: false, area: -1),                                        // 17 (P4/16-medium)
+
+					new Conv(widthSize512, widthSize512, 3, 2),
+					new Concat(),                                                                                       // cat head P5
+					new C3k2(widthSize1024 + widthSize512, widthSize1024, depthSize2, c3k: true),                       // 20 (P5/32-large)
+
+					new YolovDetect(nc, ch, true)                                                                       // Detect(P3, P4, P5)
+					);
+				RegisterComponents();
+			}
+
+			public override Tensor[] forward(Tensor x)
+			{
+				using var _ = NewDisposeScope();
+				List<Tensor> outputs = new List<Tensor>();
+				for (int i = 0; i < 9; i++)
+				{
+					var md = ((Module<Tensor, Tensor>)model[i]);
+					x = md.forward(x);
+					if (i == 4 || i == 6 || i == 8)
+					{
+						outputs.Add(x);
+					}
+				}
+
+				x = ((Module<Tensor, Tensor>)model[9]).forward(x);
+				x = ((Module<Tensor[], Tensor>)model[10]).forward([x, outputs[1]]);
+				Tensor p11 = ((Module<Tensor, Tensor>)model[11]).forward(x);
+
+				x = ((Module<Tensor, Tensor>)model[12]).forward(p11);
+				x = ((Module<Tensor[], Tensor>)model[13]).forward([x, outputs[0]]);
+				Tensor p14 = ((Module<Tensor, Tensor>)model[14]).forward(x);
+
+				x = ((Module<Tensor, Tensor>)model[15]).forward(p14);
+				x = ((Module<Tensor[], Tensor>)model[16]).forward([x, p11]);
+				Tensor p17 = ((Module<Tensor, Tensor>)model[17]).forward(x);
+
+				x = ((Module<Tensor, Tensor>)model[18]).forward(p17);
+				x = ((Module<Tensor[], Tensor>)model[19]).forward([x, outputs[2]]);
+				Tensor p20 = ((Module<Tensor, Tensor>)model[20]).forward(x);
+
+				var list = ((Module<Tensor[], Tensor[]>)model[21]).forward([p14, p17, p20]);
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();

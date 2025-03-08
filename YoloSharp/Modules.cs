@@ -81,9 +81,7 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				Tensor result = add ? input + cv2.forward(cv1.forward(input)) : cv2.forward(cv1.forward(input));
-				return result.MoveToOuterDisposeScope();
+				return add ? input + cv2.forward(cv1.forward(input)) : cv2.forward(cv1.forward(input));
 			}
 		}
 
@@ -110,9 +108,7 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				Tensor result = cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
-				return result.MoveToOuterDisposeScope();
+				return cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
 			}
 		}
 
@@ -136,9 +132,7 @@ namespace YoloSharp
 			}
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				Tensor result = cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
-				return result.MoveToOuterDisposeScope();
+				return cv3.forward(cat([m.forward(cv1.forward(input)), cv2.forward(input)], 1));
 			}
 		}
 
@@ -274,13 +268,13 @@ namespace YoloSharp
 
 		public class PSABlock : Module<Tensor, Tensor>
 		{
-			private readonly Attention attn; // can use ScaledDotProductAttention instead
+			private readonly ScaledDotProductAttention attn; // can use ScaledDotProductAttention instead
 			private readonly Sequential ffn;
 			private readonly bool add;
 
 			public PSABlock(int c, float attn_ratio = 0.5f, int num_heads = 4, bool shortcut = true) : base("PSABlock")
 			{
-				this.attn = new Attention(c); 
+				this.attn = new ScaledDotProductAttention(c);
 				this.ffn = nn.Sequential(new Conv(c, c * 2, 1), new Conv(c * 2, c, 1, act: false));
 				this.add = shortcut;
 				RegisterComponents();
@@ -288,10 +282,9 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
 				x = this.add ? (x + this.attn.forward(x)) : this.attn.forward(x);
 				x = this.add ? (x + this.ffn.forward(x)) : this.ffn.forward(x);
-				return x.MoveToOuterDisposeScope();
+				return x;
 			}
 		}
 
@@ -348,7 +341,6 @@ namespace YoloSharp
 
 			}
 		}
-
 
 		public class ScaledDotProductAttention : Module<Tensor, Tensor>
 		{
@@ -427,9 +419,7 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
-				Tensor result = this.cv2.forward(this.cv1.forward(x));
-				return result.MoveToOuterDisposeScope();
+				return this.cv2.forward(this.cv1.forward(x));
 			}
 		}
 
@@ -483,9 +473,187 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
+				return this.add ? (x + this.cv1.forward(x)) : this.cv1.forward(x);
+			}
+		}
+
+
+		/// <summary>
+		/// Area-Attention C2f module for enhanced feature extraction with area-based attention mechanisms.
+		/// This module extends the C2f architecture by incorporating area-attention and ABlock layers for improved feature
+		/// processing.It supports both area-attention and standard convolution modes.
+		/// </summary>
+		public class A2C2f : Module<Tensor, Tensor>
+		{
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			private readonly Parameter? gamma;
+			private readonly Sequential m;
+			public A2C2f(int c1, int c2, int n = 1, bool a2 = true, int area = 1, bool residual = false, float mlp_ratio = 2.0f, float e = 0.5f, int g = 1, bool shortcut = true) : base(nameof(A2C2f))
+			{
+				int c_ = (int)(c2 * e);
+				if (c_ % 32 != 0)
+				{
+					throw new Exception("Dimension of ABlock be a multiple of 32.");
+				}
+				this.cv1 = new Conv(c1, c_, 1, 1);
+				this.cv2 = new Conv((1 + n) * c_, c2, 1);
+
+				this.gamma = (a2 && residual) ? nn.Parameter(0.01 * torch.ones(c2), requires_grad: true) : null;
+				m = Sequential();
+				for (int i = 0; i < n; i++)
+				{
+					if (a2)
+					{
+						var seq = Sequential();
+						for (int j = 0; j < 2; j++)
+						{
+							seq.append(new ABlock(c_, c_ / 32, mlp_ratio, area));
+						}
+						m.append(seq);
+					}
+					else
+					{
+						var c3k = new C3k(c_, c_, 2, shortcut, g);
+						m.append(c3k);
+					}
+				}
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				using (NewDisposeScope())
+				{
+					var y = new List<Tensor> { cv1.forward(x) };
+
+					foreach (var module in m.children())
+					{
+						y.Add(((Module<Tensor, Tensor>)module).forward(y.Last()));
+					}
+
+					var y_cat = torch.cat(y.ToArray(), 1);
+					var output = cv2.forward(y_cat);
+
+					if (gamma is not null)
+					{
+						var gamma_view = gamma.view(new long[] { -1, gamma.shape[0], 1, 1 });
+						return x + gamma_view * output;
+					}
+					return output.MoveToOuterDisposeScope();
+				}
+			}
+		}
+
+		/// <summary>
+		/// Area-attention block module for efficient feature extraction in YOLO models.
+		/// This module implements an area-attention mechanism combined with a feed-forward network for processing feature maps.
+		/// It uses a novel area-based attention approach that is more efficient than traditional self-attention while
+		/// maintaining effectiveness
+		/// </summary>
+		public class ABlock : Module<Tensor, Tensor>
+		{
+			private readonly AAttn attn;
+			private readonly Sequential mlp;
+			private Action<Module> initWeights;  // Weight initialization function
+			public ABlock(int dim, int num_heads, float mlp_ratio = 1.2f, int area = 1) : base(nameof(ABlock))
+			{
+				this.attn = new AAttn(dim, num_heads: num_heads, area: area);
+				int mlp_hidden_dim = (int)(dim * mlp_ratio);
+				this.mlp = Sequential(new Conv(dim, mlp_hidden_dim, 1), new Conv(mlp_hidden_dim, dim, 1, act: false));
+				// Initialize weights
+				initWeights = m =>
+				{
+					if (m is Conv2d conv)
+					{
+						nn.init.trunc_normal_(conv.weight, std: 0.02);
+						if (conv.bias is not null)
+							nn.init.constant_(conv.bias, 0);
+					}
+				};
+				this.apply(initWeights);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				x = x + this.attn.forward(x);
+				return x + this.mlp.forward(x);
+			}
+		}
+
+
+		/// <summary>
+		/// Area-attention module for YOLO models, providing efficient attention mechanisms.
+		/// This module implements an area-based attention mechanism that processes input features in a spatially-aware manner,
+		/// making it particularly effective for object detection tasks.
+
+		/// </summary>
+		public class AAttn : Module<Tensor, Tensor>
+		{
+			private readonly int area;
+			private readonly int num_heads;
+			private readonly int head_dim;
+
+			private readonly Conv qkv;
+			private readonly Conv proj;
+			private readonly Conv pe;
+			public AAttn(int dim, int num_heads, int area = 1) : base(nameof(AAttn))
+			{
+				this.area = area;
+				this.num_heads = num_heads;
+				this.head_dim = dim / num_heads;
+				int all_head_dim = head_dim * this.num_heads;
+
+				this.qkv = new Conv(dim, all_head_dim * 3, 1, act: false);
+				this.proj = new Conv(all_head_dim, dim, 1, act: false);
+				this.pe = new Conv(all_head_dim, dim, 7, 1, 3, groups: dim, act: false);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
 				using var _ = NewDisposeScope();
-				Tensor result = this.add ? (x + this.cv1.forward(x)) : this.cv1.forward(x);
-				return result.MoveToOuterDisposeScope();
+				long B = x.shape[0];
+				long C = x.shape[1];
+				long H = x.shape[2];
+				long W = x.shape[3];
+				long N = H * W;
+
+				Tensor qkv = this.qkv.forward(x).flatten(2).transpose(1, 2);
+
+				if (this.area > 1)
+				{
+					qkv = qkv.reshape(B * this.area, N / this.area, C * 3);
+					B = qkv.shape[0];
+					N = qkv.shape[1];
+				}
+
+				Tensor[] qkv_mix = qkv.view(B, N, this.num_heads, this.head_dim * 3)
+						.permute(0, 2, 3, 1)
+						.split([this.head_dim, this.head_dim, this.head_dim], dim: 2);
+				Tensor q = qkv_mix[0];
+				Tensor k = qkv_mix[1];
+				Tensor v = qkv_mix[2];
+
+				Tensor attn = (q.transpose(-2, -1).matmul(k)) * (float)Math.Pow(this.head_dim, -0.5);
+				attn = attn.softmax(dim: -1);
+				x = v.matmul(attn.transpose(-2, -1));
+				x = x.permute(0, 3, 1, 2);
+				v = v.permute(0, 3, 1, 2);
+
+				if (this.area > 1)
+				{
+					x = x.reshape(B / this.area, N * this.area, C);
+					v = v.reshape(B / this.area, N * this.area, C);
+					B = x.shape[0];
+					N = x.shape[1];
+				}
+
+				x = x.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
+				v = v.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
+				x = x + this.pe.forward(v);
+				return this.proj.forward(x).MoveToOuterDisposeScope();
 			}
 		}
 
@@ -506,9 +674,7 @@ namespace YoloSharp
 			}
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
-				Tensor result = this.act.forward(this.conv.forward(x) + this.conv1.forward(x));
-				return result.MoveToOuterDisposeScope();
+				return this.act.forward(this.conv.forward(x) + this.conv1.forward(x));
 			}
 		}
 
@@ -528,12 +694,10 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
 				long b = x.shape[0];  // batch, channels, anchors
 				long a = x.shape[2];
 
-				Tensor result = this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a);
-				return result.MoveToOuterDisposeScope();
+				return this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a);
 			}
 		}
 
@@ -547,9 +711,7 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor[] input)
 			{
-				using var _ = NewDisposeScope();
-				Tensor result = torch.concat(input, dim: dim);
-				return result.MoveToOuterDisposeScope();
+				return torch.concat(input, dim: dim);
 			}
 		}
 

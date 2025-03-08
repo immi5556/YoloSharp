@@ -4,4 +4,5 @@
 	Yolov5u,
 	Yolov8,
 	Yolov11,
+	Yolov12,
 }
