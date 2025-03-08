@@ -7,12 +7,12 @@ With the help of this project you won't have to transform .pt model to onnx, and
 
 - Written in C# only.
 - Train and predict your own model.
-- Support Yolov5, Yolov5u, Yolov8 and Yolov11 now.
+- Support Yolov5, Yolov5u, Yolov8, Yolov11 and Yolov12 now.
 - Support Predict and Segment now.
 - Support n/s/m/l/x size.
 - Support LetterBox and Mosaic4 method for preprocessing images.
 - Support NMS with GPU.
-- Support Load PreTrained models from ultralytics/yolov5/yolov8 and yolo11 (converted).
+- Support Load PreTrained models from ultralytics/yolov5/yolov8/yolo11 and yolov12(converted).
 
 ## Models
 
