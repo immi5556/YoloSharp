@@ -538,7 +538,7 @@ namespace YoloSharp
 					if (gamma is not null)
 					{
 						var gamma_view = gamma.view(new long[] { -1, gamma.shape[0], 1, 1 });
-						return x + gamma_view * output;
+						return (x + gamma_view * output).MoveToOuterDisposeScope();
 					}
 					return output.MoveToOuterDisposeScope();
 				}
@@ -554,11 +554,13 @@ namespace YoloSharp
 		public class ABlock : Module<Tensor, Tensor>
 		{
 			private readonly AAttn attn;
+			//private readonly SDPAAAttn attn;
 			private readonly Sequential mlp;
 			private Action<Module> initWeights;  // Weight initialization function
 			public ABlock(int dim, int num_heads, float mlp_ratio = 1.2f, int area = 1) : base(nameof(ABlock))
 			{
 				this.attn = new AAttn(dim, num_heads: num_heads, area: area);
+				//this.attn = new SDPAAAttn(dim, num_heads: num_heads, area: area);
 				int mlp_hidden_dim = (int)(dim * mlp_ratio);
 				this.mlp = Sequential(new Conv(dim, mlp_hidden_dim, 1), new Conv(mlp_hidden_dim, dim, 1, act: false));
 				// Initialize weights
@@ -641,6 +643,78 @@ namespace YoloSharp
 				x = v.matmul(attn.transpose(-2, -1));
 				x = x.permute(0, 3, 1, 2);
 				v = v.permute(0, 3, 1, 2);
+
+				if (this.area > 1)
+				{
+					x = x.reshape(B / this.area, N * this.area, C);
+					v = v.reshape(B / this.area, N * this.area, C);
+					B = x.shape[0];
+					N = x.shape[1];
+				}
+
+				x = x.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
+				v = v.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
+				x = x + this.pe.forward(v);
+				return this.proj.forward(x).MoveToOuterDisposeScope();
+			}
+		}
+
+		public class SDPAAAttn : Module<Tensor, Tensor>
+		{
+			private readonly int area;
+			private readonly int num_heads;
+			private readonly int head_dim;
+
+			private readonly Conv qkv;
+			private readonly Conv proj;
+			private readonly Conv pe;
+			public SDPAAAttn(int dim, int num_heads, int area = 1) : base(nameof(SDPAAAttn))
+			{
+				this.area = area;
+				this.num_heads = num_heads;
+				this.head_dim = dim / num_heads;
+				int all_head_dim = head_dim * this.num_heads;
+
+				this.qkv = new Conv(dim, all_head_dim * 3, 1, act: false);
+				this.proj = new Conv(all_head_dim, dim, 1, act: false);
+				this.pe = new Conv(all_head_dim, dim, 7, 1, 3, groups: dim, act: false);
+				RegisterComponents();
+			}
+
+			public override Tensor forward(Tensor x)
+			{
+				using var _ = NewDisposeScope();
+				long B = x.shape[0];
+				long C = x.shape[1];
+				long H = x.shape[2];
+				long W = x.shape[3];
+				long N = H * W;
+
+				Tensor qkv = this.qkv.forward(x).flatten(2).transpose(1, 2);
+
+				if (this.area > 1)
+				{
+					qkv = qkv.reshape(B * this.area, N / this.area, C * 3);
+					B = qkv.shape[0];
+					N = qkv.shape[1];
+				}
+
+				Tensor[] qkv_mix = qkv.view(B, N, this.num_heads, this.head_dim * 3)
+						.permute(0, 2, 3, 1)
+						.split([this.head_dim, this.head_dim, this.head_dim], dim: 2);
+				Tensor q = qkv_mix[0];
+				Tensor k = qkv_mix[1];
+				Tensor v = qkv_mix[2];
+
+				q = q.permute(0, 1, 3, 2);
+				k = k.permute(0, 1, 3, 2);
+				v = v.permute(0, 1, 3, 2);
+
+				Tensor x_attn = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_casual: false);
+
+				x_attn = x_attn.permute(0, 1, 3, 2);
+				x = x_attn.permute(0, 3, 1, 2);
+				v = v.permute(0, 3, 1, 2).contiguous();
 
 				if (this.area > 1)
 				{

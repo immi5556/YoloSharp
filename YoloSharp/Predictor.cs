@@ -70,6 +70,8 @@ namespace YoloSharp
 				_ => throw new NotImplementedException(),
 			};
 
+			//Tools.TransModelFromSafetensors(yolo, @"D:\DeepLearning\yolo\ultralytics\yolov12x.safetensors", "yolov12x.bin");
+
 		}
 
 		public void Train(string trainDataPath, string valDataPath = "", string outputPath = "output", int imageSize = 640, int epochs = 100, float lr = 0.0001f, int batchSize = 8, int numWorkers = 0, bool useMosaic = true)
@@ -267,7 +269,7 @@ namespace YoloSharp
 						case YoloType.Yolov12:
 							{
 								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.21.cv3")).ToList();
-								nc = state_dict[skipList[3]].shape[0];
+								nc = state_dict[skipList[12]].shape[0];
 								break;
 							}
 						default:

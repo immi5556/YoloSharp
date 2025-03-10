@@ -605,6 +605,9 @@ namespace YoloSharp
 				float width_multiple = 0.25f;
 				int max_channels = 1024;
 				bool useC3k = false;
+				int n_nultiple = 1;
+				bool useResidual = false;
+				float mlp_ratio = 2.0f;
 
 				switch (yoloSize)
 				{
@@ -614,6 +617,9 @@ namespace YoloSharp
 							width_multiple = 0.25f;
 							max_channels = 1024;
 							useC3k = false;
+							n_nultiple = 1;
+							useResidual = false;
+							mlp_ratio = 2.0f;
 							break;
 						}
 					case YoloSize.s:
@@ -622,6 +628,9 @@ namespace YoloSharp
 							width_multiple = 0.5f;
 							max_channels = 1024;
 							useC3k = false;
+							n_nultiple = 1;
+							useResidual = false;
+							mlp_ratio = 2.0f;
 							break;
 						}
 					case YoloSize.m:
@@ -630,6 +639,9 @@ namespace YoloSharp
 							width_multiple = 1.0f;
 							max_channels = 512;
 							useC3k = true;
+							n_nultiple = 1;
+							useResidual = false;
+							mlp_ratio = 2.0f;
 							break;
 						}
 					case YoloSize.l:
@@ -638,6 +650,9 @@ namespace YoloSharp
 							width_multiple = 1.0f;
 							max_channels = 512;
 							useC3k = true;
+							n_nultiple = 2;
+							useResidual = true;
+							mlp_ratio = 1.2f;
 							break;
 						}
 					case YoloSize.x:
@@ -646,6 +661,9 @@ namespace YoloSharp
 							width_multiple = 1.5f;
 							max_channels = 768;
 							useC3k = true;
+							n_nultiple = 2;
+							useResidual = true;
+							mlp_ratio = 1.2f;
 							break;
 						}
 				}
@@ -674,21 +692,21 @@ namespace YoloSharp
 					new Conv(widthSize256, widthSize256, 3, 2),                                                         // 3-P3/8
 					new C3k2(widthSize256, widthSize512, depthSize2, useC3k, e: 0.25f),
 					new Conv(widthSize512, widthSize512, 3, 2),                                                         // 5-P4/16
-					new A2C2f(widthSize512, widthSize512, n: 2, a2: true, area: 4),
+					new A2C2f(widthSize512, widthSize512, n: 2 * n_nultiple, a2: true, area: 4, useResidual, mlp_ratio),
 					new Conv(widthSize512, widthSize1024, 3, 2),                                                        // 7-P5/32
-					new A2C2f(widthSize1024, widthSize1024, n: 2, a2: true, area: 1),
+					new A2C2f(widthSize1024, widthSize1024, n: 2 * n_nultiple, a2: true, area: 1, useResidual, mlp_ratio),
 
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
-					new A2C2f(widthSize1024 + widthSize512, widthSize512, n: 1, a2: false, area: -1),                                   // 11
+					new A2C2f(widthSize1024 + widthSize512, widthSize512, n: n_nultiple, a2: false, area: -1, useResidual, mlp_ratio),                                   // 11
 
 					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
-					new A2C2f(widthSize512 + widthSize512, widthSize256, n: 1, a2: false, area: -1),                                    // 14 (P3/8-small)
+					new A2C2f(widthSize512 + widthSize512, widthSize256, n: n_nultiple, a2: false, area: -1, useResidual, mlp_ratio),                                    // 14 (P3/8-small)
 
 					new Conv(widthSize256, widthSize256, 3, 2),
 					new Concat(),                                                                                       // cat head P4
-					new A2C2f(widthSize512 + widthSize256, widthSize512, n: 1, a2: false, area: -1),                                        // 17 (P4/16-medium)
+					new A2C2f(widthSize512 + widthSize256, widthSize512, n: n_nultiple, a2: false, area: -1, useResidual, mlp_ratio),                                        // 17 (P4/16-medium)
 
 					new Conv(widthSize512, widthSize512, 3, 2),
 					new Concat(),                                                                                       // cat head P5
