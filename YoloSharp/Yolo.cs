@@ -1,6 +1,4 @@
-﻿using System.Diagnostics;
-using TorchSharp;
-using TorchSharp.Modules;
+﻿using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
 using static YoloSharp.Modules;
@@ -56,9 +54,9 @@ namespace YoloSharp
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
 
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][] { new float[] { 10 / p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23 / p3_d }, // P3/8
+						new float[] { 30 / p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119 / p4_d },// P4/16
+						new float[] { 116 / p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326 / p5_d }};   // P5/32
 
 				int widthSize64 = (int)(64 * width_multiple);
 				int widthSize128 = (int)(128 * width_multiple);
@@ -70,7 +68,7 @@ namespace YoloSharp
 				int depthSize9 = (int)(9 * depth_multiple);
 
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 
 				model = ModuleList<Module>(
 					// backbone:
@@ -87,12 +85,12 @@ namespace YoloSharp
 
 					// head:
 					new Conv(widthSize1024, widthSize512, 1, 1),
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P4
 					new C3(widthSize1024, widthSize512, depthSize3, false),    // 13
 
 					new Conv(widthSize512, widthSize256, 1, 1),
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P3
 					new C3(widthSize512, widthSize256, depthSize3, false),      // 17 (P3/8-small)
 
@@ -126,26 +124,26 @@ namespace YoloSharp
 				// First block
 				var p10 = ((Module<Tensor, Tensor>)model[10]).forward(x);
 				x = ((Module<Tensor, Tensor>)model[11]).call(p10);
-				x = ((Module<Tensor[], Tensor>)model[12]).call([x, outputs[1]]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[12]).call(new Tensor[] { x, outputs[1] }); // Concat with P4
 				x = ((Module<Tensor, Tensor>)model[13]).call(x);
 
 				// Second block
 				var p14 = ((Module<Tensor, Tensor>)model[14]).call(x);
 				x = ((Module<Tensor, Tensor>)model[15]).call(p14);
-				x = ((Module<Tensor[], Tensor>)model[16]).call([x, outputs[0]]); // Concat with P3
+				x = ((Module<Tensor[], Tensor>)model[16]).call(new Tensor[] { x, outputs[0] }); // Concat with P3
 				var p3_out = ((Module<Tensor, Tensor>)model[17]).call(x);
 
 				// Third block
 				x = ((Module<Tensor, Tensor>)model[18]).call(p3_out);
-				x = ((Module<Tensor[], Tensor>)model[19]).call([x, p14]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[19]).call(new Tensor[] { x, p14 }); // Concat with P4
 				var p4_out = ((Module<Tensor, Tensor>)model[20]).call(x);
 
 				// Fourth block
 				x = ((Module<Tensor, Tensor>)model[21]).call(p4_out);
-				x = ((Module<Tensor[], Tensor>)model[22]).call([x, p10]); // Concat with P5
+				x = ((Module<Tensor[], Tensor>)model[22]).call(new Tensor[] { x, p10 }); // Concat with P5
 				var p5_out = ((Module<Tensor, Tensor>)model[23]).call(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward([p3_out, p4_out, p5_out]);
+				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward(new Tensor[] { p3_out, p4_out, p5_out });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -203,9 +201,11 @@ namespace YoloSharp
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
 
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][] {
+					new float[]{ 10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d},// P4/16
+					new float[]{116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d } };   // P5/32
+
 
 				int widthSize64 = (int)(64 * width_multiple);
 				int widthSize128 = (int)(128 * width_multiple);
@@ -217,7 +217,7 @@ namespace YoloSharp
 				int depthSize9 = (int)(9 * depth_multiple);
 
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 
 				model = ModuleList<Module>(
 					// backbone:
@@ -234,12 +234,12 @@ namespace YoloSharp
 
 					// head:
 					new Conv(widthSize1024, widthSize512, 1, 1),
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P4
 					new C3(widthSize1024, widthSize512, depthSize3, false),    // 13
 
 					new Conv(widthSize512, widthSize256, 1, 1),
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P3
 					new C3(widthSize512, widthSize256, depthSize3, false),      // 17 (P3/8-small)
 
@@ -273,26 +273,26 @@ namespace YoloSharp
 				// First block
 				var p10 = ((Module<Tensor, Tensor>)model[10]).forward(x);
 				x = ((Module<Tensor, Tensor>)model[11]).call(p10);
-				x = ((Module<Tensor[], Tensor>)model[12]).call([x, outputs[1]]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[12]).call(new Tensor[] { x, outputs[1] }); // Concat with P4
 				x = ((Module<Tensor, Tensor>)model[13]).call(x);
 
 				// Second block
 				var p14 = ((Module<Tensor, Tensor>)model[14]).call(x);
 				x = ((Module<Tensor, Tensor>)model[15]).call(p14);
-				x = ((Module<Tensor[], Tensor>)model[16]).call([x, outputs[0]]); // Concat with P3
+				x = ((Module<Tensor[], Tensor>)model[16]).call(new Tensor[] { x, outputs[0] }); // Concat with P3
 				var p3_out = ((Module<Tensor, Tensor>)model[17]).call(x);
 
 				// Third block
 				x = ((Module<Tensor, Tensor>)model[18]).call(p3_out);
-				x = ((Module<Tensor[], Tensor>)model[19]).call([x, p14]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[19]).call(new Tensor[] { x, p14 }); // Concat with P4
 				var p4_out = ((Module<Tensor, Tensor>)model[20]).call(x);
 
 				// Fourth block
 				x = ((Module<Tensor, Tensor>)model[21]).call(p4_out);
-				x = ((Module<Tensor[], Tensor>)model[22]).call([x, p10]); // Concat with P5
+				x = ((Module<Tensor[], Tensor>)model[22]).call(new Tensor[] { x, p10 }); // Concat with P5
 				var p5_out = ((Module<Tensor, Tensor>)model[23]).call(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward([p3_out, p4_out, p5_out]);
+				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward(new Tensor[] { p3_out, p4_out, p5_out });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -355,9 +355,10 @@ namespace YoloSharp
 				float p3_d = 8.0f;
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][]{
+					new float[]{10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d},// P4/16
+					new float[]{116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d}};   // P5/32
 
 				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
 				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
@@ -368,7 +369,7 @@ namespace YoloSharp
 				int depthSize6 = (int)(6 * depth_multiple);
 				int depthSize9 = (int)(9 * depth_multiple);
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 
 				model = ModuleList<Module>(
 					// backbone:
@@ -384,11 +385,11 @@ namespace YoloSharp
 					new SPPF(widthSize1024, widthSize1024, 5),                                                          // 9
 
 					// head:
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
 					new C2f(widthSize512 + widthSize1024, widthSize512, depthSize3),                                    // 12
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
 					new C2f(widthSize256 + widthSize512, widthSize256, depthSize3),                                     // 15 (P3/8-small)
 
@@ -420,25 +421,25 @@ namespace YoloSharp
 
 				// First block
 				x = ((Module<Tensor, Tensor>)model[10]).forward(x);
-				x = ((Module<Tensor[], Tensor>)model[11]).forward([x, outputs[1]]);
+				x = ((Module<Tensor[], Tensor>)model[11]).forward(new Tensor[] { x, outputs[1] });
 				var p12 = ((Module<Tensor, Tensor>)model[12]).forward(x);
 
 				// Second block
 				x = ((Module<Tensor, Tensor>)model[13]).forward(p12);
-				x = ((Module<Tensor[], Tensor>)model[14]).forward([x, outputs[0]]); // Concat with P3
+				x = ((Module<Tensor[], Tensor>)model[14]).forward(new Tensor[] { x, outputs[0] }); // Concat with P3
 				var p15 = ((Module<Tensor, Tensor>)model[15]).forward(x);
 
 				// Third block
 				x = ((Module<Tensor, Tensor>)model[16]).forward(p15);
-				x = ((Module<Tensor[], Tensor>)model[17]).forward([x, p12]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[17]).forward(new Tensor[] { x, p12 }); // Concat with P4
 				var p18 = ((Module<Tensor, Tensor>)model[18]).forward(x);
 
 				// Fourth block
 				x = ((Module<Tensor, Tensor>)model[19]).forward(p18);
-				x = ((Module<Tensor[], Tensor>)model[20]).forward([x, outputs[2]]); // Concat with P5
+				x = ((Module<Tensor[], Tensor>)model[20]).forward(new Tensor[] { x, outputs[2] }); // Concat with P5
 				var p21 = ((Module<Tensor, Tensor>)model[21]).forward(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[22]).forward([p15, p18, p21]);
+				var list = ((Module<Tensor[], Tensor[]>)model[22]).forward(new Tensor[] { p15, p18, p21 });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -507,9 +508,10 @@ namespace YoloSharp
 				float p3_d = 8.0f;
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][]{
+					new float[]{  10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{ 30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d },// P4/16
+					new float[]{ 116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d }};   // P5/32
 
 				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
 				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
@@ -518,7 +520,7 @@ namespace YoloSharp
 				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
 				int depthSize2 = (int)(2 * depth_multiple);
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 				strides = ch;
 
 				model = new ModuleList<Module>(
@@ -534,11 +536,11 @@ namespace YoloSharp
 					new SPPF(widthSize1024, widthSize1024, 5),                                                          // 9
 					new C2PSA(widthSize1024, widthSize1024, depthSize2),                                                //10
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
 					new C3k2(widthSize1024 + widthSize512, widthSize512, depthSize2, useC3k),                           // 13
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
 					new C3k2(widthSize512 + widthSize512, widthSize256, depthSize2, useC3k),                            // 16 (P3/8-small)
 
@@ -570,22 +572,22 @@ namespace YoloSharp
 				}
 
 				x = ((Module<Tensor, Tensor>)model[11]).forward(x);
-				x = ((Module<Tensor[], Tensor>)model[12]).forward([x, outputs[1]]);
+				x = ((Module<Tensor[], Tensor>)model[12]).forward(new Tensor[] { x, outputs[1] });
 				Tensor p13 = ((Module<Tensor, Tensor>)model[13]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[14]).forward(p13);
-				x = ((Module<Tensor[], Tensor>)model[15]).forward([x, outputs[0]]);
+				x = ((Module<Tensor[], Tensor>)model[15]).forward(new Tensor[] { x, outputs[0] });
 				Tensor p16 = ((Module<Tensor, Tensor>)model[16]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[17]).forward(p16);
-				x = ((Module<Tensor[], Tensor>)model[18]).forward([x, p13]);
+				x = ((Module<Tensor[], Tensor>)model[18]).forward(new Tensor[] { x, p13 });
 				Tensor p19 = ((Module<Tensor, Tensor>)model[19]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[20]).forward(p19);
-				x = ((Module<Tensor[], Tensor>)model[21]).forward([x, outputs[2]]);
+				x = ((Module<Tensor[], Tensor>)model[21]).forward(new Tensor[] { x, outputs[2] });
 				Tensor p22 = ((Module<Tensor, Tensor>)model[22]).forward(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward([p16, p19, p22]);
+				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward(new Tensor[] { p16, p19, p22 });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -671,9 +673,10 @@ namespace YoloSharp
 				float p3_d = 8.0f;
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][]{
+					new float[]{ 10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{ 30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d},// P4/16
+					new float[]{ 116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d} };   // P5/32
 
 				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
 				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
@@ -682,7 +685,7 @@ namespace YoloSharp
 				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
 				int depthSize2 = (int)(2 * depth_multiple);
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 				strides = ch;
 
 				model = new ModuleList<Module>(
@@ -696,11 +699,11 @@ namespace YoloSharp
 					new Conv(widthSize512, widthSize1024, 3, 2),                                                        // 7-P5/32
 					new A2C2f(widthSize1024, widthSize1024, n: 2 * n_nultiple, a2: true, area: 1, useResidual, mlp_ratio),
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
 					new A2C2f(widthSize1024 + widthSize512, widthSize512, n: n_nultiple, a2: false, area: -1, useResidual, mlp_ratio),                                   // 11
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
 					new A2C2f(widthSize512 + widthSize512, widthSize256, n: n_nultiple, a2: false, area: -1, useResidual, mlp_ratio),                                    // 14 (P3/8-small)
 
@@ -732,22 +735,22 @@ namespace YoloSharp
 				}
 
 				x = ((Module<Tensor, Tensor>)model[9]).forward(x);
-				x = ((Module<Tensor[], Tensor>)model[10]).forward([x, outputs[1]]);
+				x = ((Module<Tensor[], Tensor>)model[10]).forward(new Tensor[] { x, outputs[1] });
 				Tensor p11 = ((Module<Tensor, Tensor>)model[11]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[12]).forward(p11);
-				x = ((Module<Tensor[], Tensor>)model[13]).forward([x, outputs[0]]);
+				x = ((Module<Tensor[], Tensor>)model[13]).forward(new Tensor[] { x, outputs[0] });
 				Tensor p14 = ((Module<Tensor, Tensor>)model[14]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[15]).forward(p14);
-				x = ((Module<Tensor[], Tensor>)model[16]).forward([x, p11]);
+				x = ((Module<Tensor[], Tensor>)model[16]).forward(new Tensor[] { x, p11 });
 				Tensor p17 = ((Module<Tensor, Tensor>)model[17]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[18]).forward(p17);
-				x = ((Module<Tensor[], Tensor>)model[19]).forward([x, outputs[2]]);
+				x = ((Module<Tensor[], Tensor>)model[19]).forward(new Tensor[] { x, outputs[2] });
 				Tensor p20 = ((Module<Tensor, Tensor>)model[20]).forward(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[21]).forward([p14, p17, p20]);
+				var list = ((Module<Tensor[], Tensor[]>)model[21]).forward(new Tensor[] { p14, p17, p20 });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -803,9 +806,10 @@ namespace YoloSharp
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
 
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][]{
+					new float[]{ 10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{ 30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d},// P4/16
+					new float[]{ 116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d} };   // P5/32
 
 				int widthSize64 = (int)(64 * width_multiple);
 				int widthSize128 = (int)(128 * width_multiple);
@@ -817,7 +821,7 @@ namespace YoloSharp
 				int depthSize9 = (int)(9 * depth_multiple);
 
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 
 				model = ModuleList<Module>(
 					// backbone:
@@ -834,12 +838,12 @@ namespace YoloSharp
 
 					// head:
 					new Conv(widthSize1024, widthSize512, 1, 1),
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P4
 					new C3(widthSize1024, widthSize512, depthSize3, false),    // 13
 
 					new Conv(widthSize512, widthSize256, 1, 1),
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                               // cat backbone P3
 					new C3(widthSize512, widthSize256, depthSize3, false),      // 17 (P3/8-small)
 
@@ -873,26 +877,26 @@ namespace YoloSharp
 				// First block
 				var p10 = ((Module<Tensor, Tensor>)model[10]).forward(x);
 				x = ((Module<Tensor, Tensor>)model[11]).call(p10);
-				x = ((Module<Tensor[], Tensor>)model[12]).call([x, outputs[1]]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[12]).call(new Tensor[] { x, outputs[1] }); // Concat with P4
 				x = ((Module<Tensor, Tensor>)model[13]).call(x);
 
 				// Second block
 				var p14 = ((Module<Tensor, Tensor>)model[14]).call(x);
 				x = ((Module<Tensor, Tensor>)model[15]).call(p14);
-				x = ((Module<Tensor[], Tensor>)model[16]).call([x, outputs[0]]); // Concat with P3
+				x = ((Module<Tensor[], Tensor>)model[16]).call(new Tensor[] { x, outputs[0] }); // Concat with P3
 				var p3_out = ((Module<Tensor, Tensor>)model[17]).call(x);
 
 				// Third block
 				x = ((Module<Tensor, Tensor>)model[18]).call(p3_out);
-				x = ((Module<Tensor[], Tensor>)model[19]).call([x, p14]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[19]).call(new Tensor[] { x, p14 }); // Concat with P4
 				var p4_out = ((Module<Tensor, Tensor>)model[20]).call(x);
 
 				// Fourth block
 				x = ((Module<Tensor, Tensor>)model[21]).call(p4_out);
-				x = ((Module<Tensor[], Tensor>)model[22]).call([x, p10]); // Concat with P5
+				x = ((Module<Tensor[], Tensor>)model[22]).call(new Tensor[] { x, p10 }); // Concat with P5
 				var p5_out = ((Module<Tensor, Tensor>)model[23]).call(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward([p3_out, p4_out, p5_out]);
+				var list = ((Module<Tensor[], Tensor[]>)model[24]).forward(new Tensor[] { p3_out, p4_out, p5_out });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -955,9 +959,10 @@ namespace YoloSharp
 				float p3_d = 8.0f;
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][]{
+					new float[]{10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d},// P4/16
+					new float[]{116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d} };   // P5/32
 
 				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
 				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
@@ -968,7 +973,7 @@ namespace YoloSharp
 				int depthSize6 = (int)(6 * depth_multiple);
 				int depthSize9 = (int)(9 * depth_multiple);
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 
 				model = ModuleList<Module>(
 					// backbone:
@@ -984,11 +989,11 @@ namespace YoloSharp
 					new SPPF(widthSize1024, widthSize1024, 5),                                                          // 9
 
 					// head:
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
 					new C2f(widthSize512 + widthSize1024, widthSize512, depthSize3),                                    // 12
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
 					new C2f(widthSize256 + widthSize512, widthSize256, depthSize3),                                     // 15 (P3/8-small)
 
@@ -1020,25 +1025,25 @@ namespace YoloSharp
 
 				// First block
 				x = ((Module<Tensor, Tensor>)model[10]).forward(x);
-				x = ((Module<Tensor[], Tensor>)model[11]).forward([x, outputs[1]]);
+				x = ((Module<Tensor[], Tensor>)model[11]).forward(new Tensor[] { x, outputs[1] });
 				var p12 = ((Module<Tensor, Tensor>)model[12]).forward(x);
 
 				// Second block
 				x = ((Module<Tensor, Tensor>)model[13]).forward(p12);
-				x = ((Module<Tensor[], Tensor>)model[14]).forward([x, outputs[0]]); // Concat with P3
+				x = ((Module<Tensor[], Tensor>)model[14]).forward(new Tensor[] { x, outputs[0] }); // Concat with P3
 				var p15 = ((Module<Tensor, Tensor>)model[15]).forward(x);
 
 				// Third block
 				x = ((Module<Tensor, Tensor>)model[16]).forward(p15);
-				x = ((Module<Tensor[], Tensor>)model[17]).forward([x, p12]); // Concat with P4
+				x = ((Module<Tensor[], Tensor>)model[17]).forward(new Tensor[] { x, p12 }); // Concat with P4
 				var p18 = ((Module<Tensor, Tensor>)model[18]).forward(x);
 
 				// Fourth block
 				x = ((Module<Tensor, Tensor>)model[19]).forward(p18);
-				x = ((Module<Tensor[], Tensor>)model[20]).forward([x, outputs[2]]); // Concat with P5
+				x = ((Module<Tensor[], Tensor>)model[20]).forward(new Tensor[] { x, outputs[2] }); // Concat with P5
 				var p21 = ((Module<Tensor, Tensor>)model[21]).forward(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[22]).forward([p15, p18, p21]);
+				var list = ((Module<Tensor[], Tensor[]>)model[22]).forward(new Tensor[] { p15, p18, p21 });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -1107,9 +1112,10 @@ namespace YoloSharp
 				float p3_d = 8.0f;
 				float p4_d = 16.0f;
 				float p5_d = 32.0f;
-				float[][] ach = [[10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d], // P3/8
-						[30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d],// P4/16
-						[116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d]];   // P5/32
+				float[][] ach = new float[][]{
+					new float[]{ 10/p3_d, 13 / p3_d, 16 / p3_d, 30 / p3_d, 33 / p3_d, 23/p3_d }, // P3/8
+					new float[]{ 30/p4_d, 61 / p4_d, 62 / p4_d, 45 / p4_d, 59 / p4_d, 119/p4_d },// P4/16
+					new float[]{ 116/p5_d, 90 / p5_d, 156 / p5_d, 198 / p5_d, 373 / p5_d, 326/p5_d}};   // P5/32
 
 				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
 				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
@@ -1118,7 +1124,7 @@ namespace YoloSharp
 				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
 				int depthSize2 = (int)(2 * depth_multiple);
 
-				int[] ch = [widthSize256, widthSize512, widthSize1024];
+				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
 				strides = ch;
 
 				model = new ModuleList<Module>(
@@ -1134,11 +1140,11 @@ namespace YoloSharp
 					new SPPF(widthSize1024, widthSize1024, 5),                                                          // 9
 					new C2PSA(widthSize1024, widthSize1024, depthSize2),                                                //10
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P4
 					new C3k2(widthSize1024 + widthSize512, widthSize512, depthSize2, useC3k),                           // 13
 
-					Upsample(scale_factor: [2, 2], mode: UpsampleMode.Nearest),
+					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
 					new Concat(),                                                                                       // cat backbone P3
 					new C3k2(widthSize512 + widthSize512, widthSize256, depthSize2, useC3k),                            // 16 (P3/8-small)
 
@@ -1170,22 +1176,22 @@ namespace YoloSharp
 				}
 
 				x = ((Module<Tensor, Tensor>)model[11]).forward(x);
-				x = ((Module<Tensor[], Tensor>)model[12]).forward([x, outputs[1]]);
+				x = ((Module<Tensor[], Tensor>)model[12]).forward(new Tensor[] { x, outputs[1] });
 				Tensor p13 = ((Module<Tensor, Tensor>)model[13]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[14]).forward(p13);
-				x = ((Module<Tensor[], Tensor>)model[15]).forward([x, outputs[0]]);
+				x = ((Module<Tensor[], Tensor>)model[15]).forward(new Tensor[] { x, outputs[0] });
 				Tensor p16 = ((Module<Tensor, Tensor>)model[16]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[17]).forward(p16);
-				x = ((Module<Tensor[], Tensor>)model[18]).forward([x, p13]);
+				x = ((Module<Tensor[], Tensor>)model[18]).forward(new Tensor[] { x, p13 });
 				Tensor p19 = ((Module<Tensor, Tensor>)model[19]).forward(x);
 
 				x = ((Module<Tensor, Tensor>)model[20]).forward(p19);
-				x = ((Module<Tensor[], Tensor>)model[21]).forward([x, outputs[2]]);
+				x = ((Module<Tensor[], Tensor>)model[21]).forward(new Tensor[] { x, outputs[2] });
 				Tensor p22 = ((Module<Tensor, Tensor>)model[22]).forward(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward([p16, p19, p22]);
+				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward(new Tensor[] { p16, p19, p22 });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();

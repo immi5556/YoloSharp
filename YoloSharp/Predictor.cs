@@ -1,5 +1,4 @@
-﻿using System.Drawing;
-using TorchSharp;
+﻿using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -179,9 +178,9 @@ namespace YoloSharp
 			return lossValue;
 		}
 
-		public List<PredictResult> ImagePredict(Bitmap image, float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
+		public List<PredictResult> ImagePredict(ImageMagick.MagickImage image, float PredictThreshold = 0.25f, float IouThreshold = 0.5f)
 		{
-			Tensor orgImage = Lib.GetTensorFromBitmap(image).to(dtype, device);
+			Tensor orgImage = Lib.GetTensorFromImage(image).to(dtype, device);
 			orgImage = torch.stack(new Tensor[] { orgImage[2], orgImage[1], orgImage[0] }, dim: 0).unsqueeze(0) / 255.0f;
 			int w = (int)orgImage.shape[3];
 			int h = (int)orgImage.shape[2];
@@ -191,7 +190,7 @@ namespace YoloSharp
 			padHeight = padHeight == 32 ? 0 : padHeight;
 			padWidth = padWidth == 32 ? 0 : padWidth;
 
-			Tensor input = torch.nn.functional.pad(orgImage, [0, padWidth, 0, padHeight], PaddingModes.Zeros);
+			Tensor input = torch.nn.functional.pad(orgImage, new long[] { 0, padWidth, 0, padHeight }, PaddingModes.Zeros);
 			yolo.eval();
 
 			Tensor[] tensors = yolo.forward(input);

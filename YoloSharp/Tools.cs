@@ -22,7 +22,7 @@ namespace YoloSharp
 
 			foreach (var li in safetensorTensors)
 			{
-				if (!li.Shape.SequenceEqual([1]))
+				if (!li.Shape.SequenceEqual(new long[] { 1 }))
 				{
 					Tensor t = torch.zeros(li.Shape.ToArray(), dtype: li.Type);
 					byte[] dt = safetensorLoader.ReadByteFromFile(li);

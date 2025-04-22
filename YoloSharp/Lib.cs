@@ -1,5 +1,4 @@
-﻿using System.Drawing;
-using System.Drawing.Imaging;
+﻿using ImageMagick;
 using TorchSharp;
 using static TorchSharp.torch;
 
@@ -71,20 +70,22 @@ namespace YoloSharp
 			return box.MoveToOuterDisposeScope();
 		}
 
-		public static Tensor GetTensorFromBitmap(Bitmap bitmap)
+		internal static Tensor GetTensorFromImage(MagickImage image)
 		{
-			using MemoryStream memoryStream = new MemoryStream();
-			bitmap.Save(memoryStream, ImageFormat.Jpeg);
-			memoryStream.Position = 0;
-			return torchvision.io.read_image(memoryStream);
+			using (MemoryStream memoryStream = new MemoryStream())
+			{
+				image.Write(memoryStream, MagickFormat.Png);
+				memoryStream.Position = 0;
+				return torchvision.io.read_image(memoryStream);
+			}
 		}
 
-		public static Bitmap GetBitmapFromTensor(Tensor tensor)
+		public static MagickImage GetImageFromTensor(Tensor tensor)
 		{
 			MemoryStream memoryStream = new MemoryStream();
-			torchvision.io.write_jpeg(tensor.cpu(), memoryStream);
+			torchvision.io.write_png(tensor.cpu(), memoryStream);
 			memoryStream.Position = 0;
-			return new Bitmap(memoryStream);
+			return new MagickImage(memoryStream, MagickFormat.Png);
 		}
 
 	}

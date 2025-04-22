@@ -1,6 +1,4 @@
-﻿using System.Drawing;
-using System.Drawing.Imaging;
-using TorchSharp;
+﻿using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -28,7 +26,6 @@ namespace YoloSharp
 		private torch.ScalarType dtype;
 		private int socrCount;
 		private YoloType yoloType;
-
 
 		public Segmenter(int socrCount = 80, YoloType yoloType = YoloType.Yolov8, YoloSize yoloSize = YoloSize.n, DeviceType deviceType = DeviceType.CUDA, ScalarType dtype = ScalarType.Float32)
 		{
@@ -169,35 +166,35 @@ namespace YoloSharp
 		}
 
 
-		public (List<SegmentResult>, Bitmap) ImagePredict(Bitmap image, float PredictThreshold = 0.25f, float IouThreshold = 0.5f, int imgSize = 640)
+		public (List<SegmentResult>, ImageMagick.MagickImage) ImagePredict(ImageMagick.MagickImage image, float PredictThreshold = 0.25f, float IouThreshold = 0.5f, int imgSize = 640)
 		{
 			yolo.eval();
-			Tensor orgImage = Lib.GetTensorFromBitmap(image).to(dtype, device);
+			Tensor orgImage = Lib.GetTensorFromImage(image).to(dtype, device);
 			orgImage = orgImage.unsqueeze(0) / 255.0f;
 
 			float gain = Math.Max((float)orgImage.shape[2] / imgSize, (float)orgImage.shape[3] / imgSize);
 			int new_w = (int)(orgImage.shape[3] / gain);
 			int new_h = (int)(orgImage.shape[2] / gain);
-			Tensor tensor = torch.nn.functional.interpolate(orgImage, [new_h, new_w], mode: InterpolationMode.Bilinear, align_corners: false);
+			Tensor tensor = torch.nn.functional.interpolate(orgImage, new long[] { new_h, new_w }, mode: InterpolationMode.Bilinear, align_corners: false);
 			int padHeight = imgSize - new_h;
 			int padWidth = imgSize - new_w;
 
-			tensor = torch.nn.functional.pad(tensor, [0, padWidth, 0, padHeight], PaddingModes.Zeros);
+			tensor = torch.nn.functional.pad(tensor, new long[] { 0, padWidth, 0, padHeight }, PaddingModes.Zeros);
 
 			Tensor[] outputs = yolo.forward(tensor.cuda());
 			List<Tensor> preds = NonMaxSuppression(outputs[0], PredictThreshold, IouThreshold);
 			Tensor proto = outputs[4];
 
 			List<SegmentResult> results = new List<SegmentResult>();
-			Bitmap maskBitmap = new Bitmap((int)orgImage.shape[3], (int)orgImage.shape[2], PixelFormat.Format24bppRgb);
+			ImageMagick.MagickImage maskBitmap = new ImageMagick.MagickImage();
 			if (proto.shape[0] > 0)
 			{
 				if (!Equals(preds[0], null))
 				{
 					int i = 0;
-					Tensor masks = process_mask(proto[i], preds[i][.., 6..], preds[i][.., 0..4], [tensor.shape[2], tensor.shape[3]], upsample: true);
+					Tensor masks = process_mask(proto[i], preds[i][.., 6..], preds[i][.., 0..4], new long[] { tensor.shape[2], tensor.shape[3] }, upsample: true);
 					preds[i][.., ..4] = preds[i][.., ..4] * gain;
-					preds[i][.., ..4] = Lib.ClipBox(preds[i][.., ..4], [orgImage.shape[2], orgImage.shape[3]]);
+					preds[i][.., ..4] = Lib.ClipBox(preds[i][.., ..4], new float[] { orgImage.shape[2], orgImage.shape[3] });
 					Tensor orgImg = (tensor[0] * 255).@byte();
 					masks = torchvision.transforms.functional.crop(masks, 0, 0, new_h, new_w);
 					masks = torchvision.transforms.functional.resize(masks, (int)orgImage.shape[2], (int)orgImage.shape[3]);
@@ -229,7 +226,7 @@ namespace YoloSharp
 						orgImage[0, 2, masks[j].@bool()] += rand.NextSingle();
 					}
 					orgImage = (orgImage.clip(0, 1) * 255).@byte().squeeze(0);
-					maskBitmap = Lib.GetBitmapFromTensor(orgImage);
+					maskBitmap = Lib.GetImageFromTensor(orgImage);
 				}
 			}
 			return (results, maskBitmap);
@@ -286,7 +283,8 @@ namespace YoloSharp
 					{
 						skipList.Clear();
 					}
-				};
+				}
+				;
 
 				yolo.to(modelType);
 				var (miss, err) = yolo.load_state_dict(state_dict, skip: skipList);
@@ -334,7 +332,7 @@ namespace YoloSharp
 				var x = prediction[xi];
 				x = x[xc[xi]]; // confidence
 
-				Tensor[] box_cls_mask = x.split([4, nc, nm], 1);
+				Tensor[] box_cls_mask = x.split(new long[] { 4, nc, nm }, 1);
 				Tensor box = torchvision.ops.box_convert(box_cls_mask[0], torchvision.ops.BoxFormats.cxcywh, torchvision.ops.BoxFormats.xyxy); // box
 				Tensor cls = box_cls_mask[1]; // class
 				Tensor mask = box_cls_mask[2]; // mask
@@ -344,7 +342,7 @@ namespace YoloSharp
 
 				var conf = x[TensorIndex.Colon, TensorIndex.Slice(4, mi)].max(1, true);
 				var j = conf.indexes;
-				x = torch.cat([box, conf.values, j.to_type(scalType), mask], 1)[conf.values.view(-1) > confThreshold];
+				x = torch.cat(new Tensor[] { box, conf.values, j.to_type(scalType), mask }, 1)[conf.values.view(-1) > confThreshold];
 
 				var n = x.shape[0]; // number of boxes
 				if (n == 0)

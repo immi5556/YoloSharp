@@ -48,9 +48,9 @@ namespace YoloSharp
 			var (target_labels, target_bboxes, target_scores) = get_targets(gt_labels, gt_bboxes, target_gt_idx, fg_mask);
 
 			align_metric *= updated_mask_pos;
-			var pos_align_metrics = align_metric.amax(dims: [-1], keepdim: true);
-			var pos_overlaps = (overlaps * updated_mask_pos).amax(dims: [-1], keepdim: true);
-			var norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + eps)).amax(dims: [-2]).unsqueeze(-1);
+			var pos_align_metrics = align_metric.amax(dims: new long[] { -1 }, keepdim: true);
+			var pos_overlaps = (overlaps * updated_mask_pos).amax(dims: new long[] { -1 }, keepdim: true);
+			var norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + eps)).amax(dims: new long[] { -2 }).unsqueeze(-1);
 			target_scores = target_scores * norm_align_metric;
 
 			return (target_labels.MoveToOuterDisposeScope(), target_bboxes.MoveToOuterDisposeScope(), target_scores.MoveToOuterDisposeScope(), fg_mask.to_type(torch.ScalarType.Bool).MoveToOuterDisposeScope(), target_gt_idx.MoveToOuterDisposeScope());
@@ -139,7 +139,7 @@ namespace YoloSharp
 
 			if (topk_mask.IsInvalid)
 			{
-				topk_mask = (topk_metrics.amax(dims: [-1], keepdim: true) > eps).expand_as(topk_idxs);
+				topk_mask = (topk_metrics.amax(dims: new long[] { -1 }, keepdim: true) > eps).expand_as(topk_idxs);
 			}
 
 			topk_idxs.masked_fill_(~topk_mask, 0);
@@ -182,18 +182,20 @@ namespace YoloSharp
 
 		private Tensor select_candidates_in_gts(Tensor xy_centers, Tensor gt_bboxes, float eps = 1e-9f)
 		{
-			using var _ = NewDisposeScope();
-			var n_anchors = xy_centers.shape[0];
-			//var (bs, n_boxes, _) = gt_bboxes.shape;
-			long bs = gt_bboxes.shape[0];
-			long n_boxes = gt_bboxes.shape[1];
-			//var (lt, rb) = gt_bboxes.view(-1, 1, 4).chunk(2, dim: 2);
-			Tensor[] lt_rb = gt_bboxes.view(-1, 1, 4).chunk(2, dim: 2);
-			Tensor lt = lt_rb[0];
-			Tensor rb = lt_rb[1];
+			using (NewDisposeScope())
+			{
+				var n_anchors = xy_centers.shape[0];
+				//var (bs, n_boxes, _) = gt_bboxes.shape;
+				long bs = gt_bboxes.shape[0];
+				long n_boxes = gt_bboxes.shape[1];
+				//var (lt, rb) = gt_bboxes.view(-1, 1, 4).chunk(2, dim: 2);
+				Tensor[] lt_rb = gt_bboxes.view(-1, 1, 4).chunk(2, dim: 2);
+				Tensor lt = lt_rb[0];
+				Tensor rb = lt_rb[1];
 
-			var bbox_deltas = torch.cat([xy_centers[TensorIndex.None] - lt, rb - xy_centers[TensorIndex.None]], dim: 2).view(bs, n_boxes, n_anchors, -1);
-			return bbox_deltas.amin(dims: [3]).gt_(eps).MoveToOuterDisposeScope();
+				var bbox_deltas = torch.cat(new Tensor[] { xy_centers[TensorIndex.None] - lt, rb - xy_centers[TensorIndex.None] }, dim: 2).view(bs, n_boxes, n_anchors, -1);
+				return bbox_deltas.amin(dims: new long[] { 3 }).gt_(eps).MoveToOuterDisposeScope();
+			}
 		}
 
 		private (Tensor, Tensor, Tensor) select_highest_overlaps(Tensor mask_pos, Tensor overlaps, long n_max_boxes)
