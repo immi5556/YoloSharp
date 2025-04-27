@@ -181,8 +181,8 @@ namespace YoloSharp
 
 			tensor = torch.nn.functional.pad(tensor, new long[] { 0, padWidth, 0, padHeight }, PaddingModes.Zeros);
 
-			Tensor[] outputs = yolo.forward(tensor.cuda());
-			List<Tensor> preds = NonMaxSuppression(outputs[0], PredictThreshold, IouThreshold);
+            Tensor[] outputs = yolo.forward(device.type == TorchSharp.DeviceType.CUDA ? tensor.cuda() : tensor.cpu());
+            List<Tensor> preds = NonMaxSuppression(outputs[0], PredictThreshold, IouThreshold);
 			Tensor proto = outputs[4];
 
 			List<SegmentResult> results = new List<SegmentResult>();
