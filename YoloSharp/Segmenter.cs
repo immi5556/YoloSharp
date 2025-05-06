@@ -104,11 +104,11 @@ namespace YoloSharp
 					optimizer.zero_grad();
 					ls.backward();
 					optimizer.step();
-					Console.WriteLine($"Process: Epoch {epoch}, Step/Total Step  {step}/{trainDataLoader.Count}");
+					Console.WriteLine($"[{DateTime.Now.ToString()}]Process: Epoch {epoch}, Step/Total Step  {step}/{trainDataLoader.Count}");
 				}
-				Console.Write("Do val now... ");
+				Console.Write($"[{DateTime.Now.ToString()}]Do val now... ");
 				float valLoss = Val(valDataPath, imageSize);
-				Console.WriteLine($"Epoch {epoch}, Val Loss: {valLoss}");
+				Console.WriteLine($"[{DateTime.Now.ToString()}]Epoch {epoch}, Val Loss: {valLoss}");
 				if (!Directory.Exists(outputPath))
 				{
 					Directory.CreateDirectory(outputPath);

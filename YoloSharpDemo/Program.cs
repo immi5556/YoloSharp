@@ -8,19 +8,34 @@ namespace YoloSharpDemo
 	{
 		static void Main(string[] args)
 		{
-			string trainDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // Training data path, it should be the same as coco dataset.
-			string valDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // If valDataPath is "", it will use trainDataPath as validation data.
-			string outputPath = "result";    // Trained model output path.
-			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n-seg.bin"; // Pretrained model path.
-			string predictImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
-			int batchSize = 16;
-			int sortCount = 80;
-			int epochs = 10;
-			float predictThreshold = 0.5f;
-			float iouThreshold = 0.45f;
+            //string trainDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // Training data path, it should be the same as coco dataset.
+            //string valDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // If valDataPath is "", it will use trainDataPath as validation data.
+            //string outputPath = "result";    // Trained model output path.
+            //string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n-seg.bin"; // Pretrained model path.
+            //string predictImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
+            //int batchSize = 16;
+            //int sortCount = 80;
+            //int epochs = 10;
+            //float predictThreshold = 0.5f;
+            //float iouThreshold = 0.45f;
 
-			YoloType yoloType = YoloType.Yolov8;
-			DeviceType deviceType = DeviceType.CUDA;
+
+            string trainDataPath = @"C:\Immi\sample\ml.net\car-damage-dataset\archive_3\train"; // Training data path, it should be the same as coco dataset.
+            string valDataPath = @"C:\Immi\sample\ml.net\car-damage-dataset\archive_3\valid"; // If valDataPath is "", it will use trainDataPath as validation data.
+            string outputPath = "result_car_damage_v1";    // Trained model output path.
+            string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n-seg.bin"; // Pretrained model path.
+                                                                                              //string predictImagePath = @"C:\Immi\sample\ml.net\yolo\datasets\carparts-seg\valid\images\new_7_png_jpg.rf.6be4e774157462beafcd5bf74c1e7d46.jpg";
+                                                                                            //string predictImagePath = @"C:\Immi\sample\ml.net\yolo\datasets\carparts-seg\valid\images\new_7_png_jpg.rf.6be4e774157462beafcd5bf74c1e7d46.jpg";
+            string predictImagePath = @"C:\Immi\sample\ml.net\yolo\datasets\carparts-seg\test\images\car4_jpg.rf.8978131a7b03be689c244641e42e1307.jpg";
+            int batchSize = 16;
+            int sortCount = 80;
+            int epochs = 20; 
+            float predictThreshold = 0.5f;
+            float iouThreshold = 0.45f;
+
+
+            YoloType yoloType = YoloType.Yolov8;
+			DeviceType deviceType = DeviceType.CPU;
 			ScalarType dtype = ScalarType.Float32;
 			YoloSize yoloSize = YoloSize.n;
 
@@ -44,7 +59,7 @@ namespace YoloSharpDemo
 
 			// Train model
 			segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
-			segmenter.LoadModel(Path.Combine(outputPath, "best.bin"));
+			segmenter.LoadModel(Path.Combine(outputPath, "best.bin"), skipNcNotEqualLayers: false);
 
 			// ImagePredict image
 			var (predictResult, resultImage) = segmenter.ImagePredict(predictImage, predictThreshold, iouThreshold);
@@ -67,7 +82,7 @@ namespace YoloSharpDemo
 					Console.WriteLine(label);
 				}
 				resultImage.Draw(drawables);
-				resultImage.Write("pred.jpg");
+				resultImage.Write("pred_car_damage_v1.jpg");
 			}
 
 			Console.WriteLine();
