@@ -46,11 +46,10 @@ namespace YoloSharp
 						continue;
 					}
 					long[] shapeArray = shape.ToObject<long[]>();
-					if (shapeArray.Length < 1)
-					{
-						shapeArray = new long[] { 1 };
-					}
-
+					//if (shapeArray.Length < 1)
+					//{
+					//	shapeArray = new long[] { 1 };
+					//}
 
 					torch.ScalarType scalar_type = torch.ScalarType.Float32;
 					switch (dtype.ToString())

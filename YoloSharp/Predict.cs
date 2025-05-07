@@ -8,7 +8,7 @@ namespace YoloSharp
 	{
 		public class Yolov5Predict : Module<Tensor, float, float, Tensor>
 		{
-			public Yolov5Predict() : base("predict")
+			public Yolov5Predict() : base(nameof(Yolov5Predict))
 			{
 
 			}
@@ -109,7 +109,7 @@ namespace YoloSharp
 
 		public class YoloPredict : Module<Tensor, float, float, Tensor>
 		{
-			public YoloPredict() : base("predict")
+			public YoloPredict() : base(nameof(YoloPredict))
 			{
 
 			}

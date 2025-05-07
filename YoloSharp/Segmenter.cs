@@ -41,8 +41,8 @@ namespace YoloSharp
 			this.yoloType = yoloType;
 			yolo = yoloType switch
 			{
-				YoloType.Yolov8 => new Yolov8Segment(socrCount, yoloSize),
-				YoloType.Yolov11 => new Yolov11Segment(socrCount, yoloSize),
+				YoloType.Yolov8 => new Yolov8Segment(socrCount, yoloSize, device, this.dtype),
+				YoloType.Yolov11 => new Yolov11Segment(socrCount, yoloSize, device, this.dtype),
 				_ => throw new NotImplementedException("Yolo type not supported."),
 			};
 			yolo.to(this.device, this.dtype);
@@ -53,6 +53,8 @@ namespace YoloSharp
 				_ => throw new NotImplementedException("Yolo type not supported."),
 			};
 			loss = loss.to(this.device, this.dtype);
+
+			//Tools.TransModelFromSafetensors(yolo, @".\output.safetensors", "yolov11n-seg.bin");
 		}
 
 

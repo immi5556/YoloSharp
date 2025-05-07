@@ -8,16 +8,16 @@ namespace YoloSharpDemo
 	{
 		static void Main(string[] args)
 		{
-			string trainDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // Training data path, it should be the same as coco dataset.
-			string valDataPath = @"..\..\..\Assets\DataSets\coco128-seg"; // If valDataPath is "", it will use trainDataPath as validation data.
+			string trainDataPath = @"..\..\..\Assets\DataSets\coco128"; // Training data path, it should be the same as coco dataset.
+			string valDataPath = @"..\..\..\Assets\DataSets\coco128"; // If valDataPath is "", it will use trainDataPath as validation data.
 			string outputPath = "result";    // Trained model output path.
-			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n-seg.bin"; // Pretrained model path.
-			string predictImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
+			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov11n.bin"; // Pretrained model path.
+			string predictImagePath = @"..\..\..\Assets\TestImage\zidane.jpg";
 			int batchSize = 16;
 			int sortCount = 80;
 			int epochs = 10;
-			float predictThreshold = 0.5f;
-			float iouThreshold = 0.45f;
+			float predictThreshold = 0.4f;
+			float iouThreshold = 0.4f;
 
 			YoloType yoloType = YoloType.Yolov8;
 			DeviceType deviceType = DeviceType.CUDA;
@@ -26,28 +26,27 @@ namespace YoloSharpDemo
 
 			MagickImage predictImage = new MagickImage(predictImagePath);
 
-			//// Create predictor
-			//Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
-
-			//// Train model
-			//predictor.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
+			// Create predictor
+			Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+			// Train model
+			predictor.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
 			//predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: true);
 
-			//// ImagePredict image
-			//predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
-			//List<Predictor.PredictResult> predictResult = predictor.ImagePredict(predictImage, predictThreshold, iouThreshold);
-			//var resultImage = predictImage.Clone();
-
-			// Create segmenter
-			Segmenter segmenter = new Segmenter(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
-			segmenter.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
-
-			// Train model
-			segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
-			segmenter.LoadModel(Path.Combine(outputPath, "best.bin"));
-
 			// ImagePredict image
-			var (predictResult, resultImage) = segmenter.ImagePredict(predictImage, predictThreshold, iouThreshold);
+			//predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
+			List<Predictor.PredictResult> predictResult = predictor.ImagePredict(predictImage, predictThreshold, iouThreshold);
+			var resultImage = predictImage.Clone();
+
+			//// Create segmenter
+			//Segmenter segmenter = new Segmenter(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+			//segmenter.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
+
+			//// Train model
+			//segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
+			//segmenter.LoadModel(Path.Combine(outputPath, "best.bin"));
+
+			//// ImagePredict image
+			//var (predictResult, resultImage) = segmenter.ImagePredict(predictImage, predictThreshold, iouThreshold);
 
 			if (predictResult.Count > 0)
 			{

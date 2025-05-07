@@ -8,7 +8,7 @@ namespace YoloSharp
 {
 	internal class Modules
 	{
-		public class Conv : Module<Tensor, Tensor>
+		internal class Conv : Module<Tensor, Tensor>
 		{
 			private readonly Conv2d conv;
 			private readonly BatchNorm2d bn;
@@ -16,176 +16,190 @@ namespace YoloSharp
 			private double eps = 0.001;
 			private double momentum = 0.03;
 
-			public Conv(int in_channels, int out_channels, int kernel_size, int stride = 1, int? padding = null, int groups = 1, int d = 1, bool bias = false, bool act = true) : base("Conv")
+			internal Conv(int in_channels, int out_channels, int kernel_size, int stride = 1, int? padding = null, int groups = 1, int d = 1, bool bias = false, bool act = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Conv))
 			{
 				if (padding == null)
 				{
 					padding = (kernel_size) / 2;
 				}
 
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value, groups: groups, bias: bias, dilation: d);
-				bn = BatchNorm2d(out_channels, eps: eps, momentum: momentum);
+				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding.Value, groups: groups, bias: bias, dilation: d, device: device, dtype: dtype);
+				bn = BatchNorm2d(out_channels, eps: eps, momentum: momentum, track_running_stats: true, device: device, dtype: dtype);
 				this.act = act;
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				Module<Tensor, Tensor> ac = act ? SiLU(true) : Identity();
-				Tensor result = ac.forward(bn.forward(conv.forward(input)));
-				return result.MoveToOuterDisposeScope();
+				using (NewDisposeScope())
+				{
+					Module<Tensor, Tensor> ac = act ? SiLU(true) : Identity();
+					Tensor result = ac.forward(bn.forward(conv.forward(input)));
+					return result.MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class DWConv : Module<Tensor, Tensor>
+		internal class DWConv : Module<Tensor, Tensor>
 		{
 			private readonly Conv2d conv;
 			private readonly BatchNorm2d bn;
 			private readonly bool act;
 
-			public DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true, bool bias = false) : base("DWConv")
+			internal DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true, bool bias = false, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(DWConv))
 			{
 				int groups = (int)BigInteger.GreatestCommonDivisor(in_channels, out_channels);
 				int padding = (kernel_size) / 2;
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups: groups, dilation: d, bias: bias);
-				bn = BatchNorm2d(out_channels);
+				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups: groups, dilation: d, bias: bias, device: device, dtype: dtype);
+				bn = BatchNorm2d(out_channels, device: device, dtype: dtype);
 				this.act = act;
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				var x = conv.forward(input);
-				Module<Tensor, Tensor> ac = act ? SiLU() : Identity();
-				Tensor result = ac.forward(bn.forward(x));
-				return result.MoveToOuterDisposeScope();
+				using (NewDisposeScope())
+				{
+					var x = conv.forward(input);
+					Module<Tensor, Tensor> ac = act ? SiLU() : Identity();
+					Tensor result = ac.forward(bn.forward(x));
+					return result.MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class Bottleneck : Module<Tensor, Tensor>
+		internal class Bottleneck : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
 			bool add;
 
-			public Bottleneck(int inChannels, int outChannels, (int, int) kernal, bool shortcut = true, int groups = 1, float e = 0.5f) : base("bottleneck")
+			internal Bottleneck(int inChannels, int outChannels, (int, int) kernal, bool shortcut = true, int groups = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Bottleneck))
 			{
 				int c = (int)(outChannels * e);
-				cv1 = new Conv(inChannels, c, kernal.Item1, 1);
-				cv2 = new Conv(c, outChannels, kernal.Item2, 1, groups: groups);
+				cv1 = new Conv(inChannels, c, kernal.Item1, 1, device: device, dtype: dtype);
+				cv2 = new Conv(c, outChannels, kernal.Item2, 1, groups: groups, device: device, dtype: dtype);
 				add = shortcut && inChannels == outChannels;
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				return add ? input + cv2.forward(cv1.forward(input)) : cv2.forward(cv1.forward(input));
+				using (NewDisposeScope())
+				{
+					Tensor re = cv2.forward(cv1.forward(input));
+					return add ? (input + re).MoveToOuterDisposeScope() : re.MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class C3 : Module<Tensor, Tensor>
+		internal class C3 : Module<Tensor, Tensor>
 		{
-			private readonly Conv cv1;
-			private readonly Conv cv2;
-			private readonly Conv cv3;
-			public Sequential m = Sequential();
+			internal readonly Conv cv1;
+			internal readonly Conv cv2;
+			internal readonly Conv cv3;
+			internal Sequential m = Sequential();
 
-			public C3(int inChannels, int outChannels, int n = 1, bool shortcut = true, int groups = 1, float e = 0.5f) : base("C3")
+			internal C3(int inChannels, int outChannels, int n = 1, bool shortcut = true, int groups = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C3))
 			{
 				int c = (int)(outChannels * e);
-				cv1 = new Conv(inChannels, c, 1, 1);
-				cv2 = new Conv(inChannels, c, 1, 1);
-				cv3 = new Conv(2 * c, outChannels, 1);
+				cv1 = new Conv(inChannels, c, 1, 1, device: device, dtype: dtype);
+				cv2 = new Conv(inChannels, c, 1, 1, device: device, dtype: dtype);
+				cv3 = new Conv(2 * c, outChannels, 1, device: device, dtype: dtype);
 
 				for (int i = 0; i < n; i++)
 				{
-					m = m.append(new Bottleneck(c, c, (1, 3), shortcut, groups, e: 1.0f));
+					m.append(new Bottleneck(c, c, (1, 3), shortcut, groups, e: 1.0f, device: device, dtype: dtype));
 				}
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				return cv3.forward(cat(new Tensor[] { m.forward(cv1.forward(input)), cv2.forward(input) }, 1));
+				using (NewDisposeScope())
+				{
+					return cv3.forward(cat(new Tensor[] { m.forward(cv1.forward(input)), cv2.forward(input) }, 1)).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class C3k : Module<Tensor, Tensor>
+		internal class C3k : C3
 		{
-			private readonly Conv cv1;
-			private readonly Conv cv2;
-			private readonly Conv cv3;
-			public Sequential m = Sequential();
-			public C3k(int inChannels, int outChannels, int n = 1, bool shortcut = true, int groups = 1, float e = 0.5f) : base("C3k")
+			internal Sequential m = Sequential();
+			internal C3k(int inChannels, int outChannels, int n = 1, bool shortcut = true, int groups = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(inChannels, outChannels, n, shortcut, groups, e, device, dtype)
 			{
 				int c = (int)(outChannels * e);
-				cv1 = new Conv(inChannels, c, 1, 1);
-				cv2 = new Conv(inChannels, c, 1, 1);
-				cv3 = new Conv(2 * c, outChannels, 1);
+
 				for (int i = 0; i < n; i++)
 				{
-					this.m = this.m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, e: 1.0f));
+					m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, e: 1.0f, device: device, dtype: dtype));
 				}
 				RegisterComponents();
 			}
+
 			public override Tensor forward(Tensor input)
 			{
-				return cv3.forward(cat(new Tensor[] { m.forward(cv1.forward(input)), cv2.forward(input) }, 1));
+				using (NewDisposeScope())
+				{
+					return base.cv3.forward(cat(new Tensor[] { m.forward(base.cv1.forward(input)), base.cv2.forward(input) }, 1)).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class C2f : Module<Tensor, Tensor>
+		internal class C2f : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
 			public readonly int c;
-			public Sequential m = Sequential();
-			public C2f(int inChannels, int outChannels, int n = 1, bool shortcut = false, int groups = 1, float e = 0.5f) : base("C2f")
+			internal Sequential m;
+			internal C2f(int inChannels, int outChannels, int n = 1, bool shortcut = false, int groups = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C2f))
 			{
 				this.c = (int)(outChannels * e);
-				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
-				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
+				this.cv1 = new Conv(inChannels, 2 * c, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1, device: device, dtype: dtype);  // optional act=FReLU(outChannels)
+				m = Sequential();
 				for (int i = 0; i < n; i++)
 				{
-					m = m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, 1));
+					m = m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, 1, device: device, dtype: dtype));
 				}
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				var y = this.cv1.forward(input).chunk(2, 1).ToList();
-				for (int i = 0; i < m.Count; i++)
+				using (NewDisposeScope())
 				{
-					y.Add(m[i].call(y.Last()));
+					var y = this.cv1.forward(input).chunk(2, 1).ToList();
+					for (int i = 0; i < m.Count; i++)
+					{
+						y.Add(m[i].call(y.Last()));
+					}
+					Tensor result = cv2.forward(cat(y, 1));
+					return result.MoveToOuterDisposeScope();
 				}
-				Tensor result = cv2.forward(cat(y, 1));
-				return result.MoveToOuterDisposeScope();
 			}
 		}
 
-		public class C3k2 : Module<Tensor, Tensor>
+		internal class C3k2 : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
-			public Sequential m = Sequential();
-			public C3k2(int inChannels, int outChannels, int n = 1, bool c3k = false, float e = 0.5f, int groups = 1, bool shortcut = true) : base("C3k2")
+			internal readonly Sequential m;
+			internal C3k2(int inChannels, int outChannels, int n = 1, bool c3k = false, float e = 0.5f, int groups = 1, bool shortcut = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C3k2))
 			{
 				int c = (int)(outChannels * e);
-				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
-				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
+				this.cv1 = new Conv(inChannels, 2 * c, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1, device: device, dtype: dtype);  // optional act=FReLU(outChannels)
+				m = Sequential();
 				for (int i = 0; i < n; i++)
 				{
 					if (c3k)
 					{
-						this.m = this.m.append(new C3k(c, c, 2, shortcut, groups));
+						this.m = this.m.append(new C3k(c, c, 2, shortcut, groups, device: device, dtype: dtype));
 					}
 					else
 					{
-						this.m = this.m.append(new Bottleneck(c, c, (3, 3), shortcut, groups));
+						this.m = this.m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, device: device, dtype: dtype));
 					}
 				}
 				RegisterComponents();
@@ -193,113 +207,124 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				var y = this.cv1.forward(input).chunk(2, 1).ToList();
-				for (int i = 0; i < m.Count; i++)
+				using (NewDisposeScope())
 				{
-					y.Add(m[i].call(y.Last()));
+					List<Tensor> y = this.cv1.forward(input).chunk(2, 1).ToList();
+					for (int i = 0; i < m.Count; i++)
+					{
+						y.Add(m[i].call(y.Last()));
+					}
+					Tensor result = cv2.forward(cat(y, 1));
+					return result.MoveToOuterDisposeScope();
 				}
-				Tensor result = cv2.forward(cat(y, 1));
-				return result.MoveToOuterDisposeScope();
 			}
 		}
 
-		public class SPPF : Module<Tensor, Tensor>
+		internal class SPPF : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
 			private readonly MaxPool2d m;
 
-			public SPPF(int inChannels, int outChannels, int kernalSize = 5) : base("SPPF")
+			internal SPPF(int inChannels, int outChannels, int kernalSize = 5, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(SPPF))
 			{
 				int c = inChannels / 2;
-				cv1 = new Conv(inChannels, c, 1, 1);
-				cv2 = new Conv(c * 4, outChannels, 1, 1);
+				cv1 = new Conv(inChannels, c, 1, 1, device: device, dtype: dtype);
+				cv2 = new Conv(c * 4, outChannels, 1, 1, device: device, dtype: dtype);
 				m = MaxPool2d(kernalSize, stride: 1, padding: kernalSize / 2);
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				var x = cv1.forward(input);
-				var y1 = m.forward(x);
-				var y2 = m.forward(y1);
-				Tensor result = cv2.forward(cat(new[] { x, y1, y2, m.forward(y2) }, 1));
-				return result.MoveToOuterDisposeScope();
+				using (NewDisposeScope())
+				{
+					Tensor x = cv1.forward(input);
+					Tensor y1 = m.forward(x);
+					Tensor y2 = m.forward(y1);
+					Tensor result = cv2.forward(cat(new[] { x, y1, y2, m.forward(y2) }, 1));
+					return result.MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class C2PSA : Module<Tensor, Tensor>
+		internal class C2PSA : Module<Tensor, Tensor>
 		{
 			private readonly int c;
 			private readonly Conv cv1;
 			private readonly Conv cv2;
-			private readonly Sequential m = Sequential();
+			private readonly Sequential m;
 
-			public C2PSA(int inChannel, int outChannel, int n = 1, float e = 0.5f) : base("C2PSA")
+			internal C2PSA(int inChannel, int outChannel, int n = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C2PSA))
 			{
 				if (inChannel != outChannel)
 				{
 					throw new ArgumentException("in channel not equals to out channel");
 				}
 				this.c = (int)(inChannel * e);
-				this.cv1 = new Conv(inChannel, 2 * c, 1, 1);
-				this.cv2 = new Conv(2 * c, outChannel, 1);
-
+				this.cv1 = new Conv(inChannel, 2 * c, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv(2 * c, outChannel, 1, device: device, dtype: dtype);
+				m = Sequential();
 				for (int i = 0; i < n; i++)
 				{
-					m = m.append(new PSABlock(c, attn_ratio: 0.5f, num_heads: c / 64));
+					m = m.append(new PSABlock(c, attn_ratio: 0.5f, num_heads: c / 64, device: device, dtype: dtype));
 				}
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
-				Tensor[] ab = this.cv1.forward(x).split(new long[] { this.c, this.c }, dim: 1);
-				Tensor a = ab[0];
-				Tensor b = ab[1];
-				b = this.m.forward(b);
-				Tensor result = this.cv2.forward(torch.cat(new Tensor[] { a, b }, 1));
-				return result.MoveToOuterDisposeScope();
+				using (NewDisposeScope())
+				{
+					Tensor[] ab = this.cv1.forward(x).split(new long[] { this.c, this.c }, dim: 1);
+					Tensor a = ab[0];
+					Tensor b = ab[1];
+					b = this.m.forward(b);
+					Tensor result = this.cv2.forward(torch.cat(new Tensor[] { a, b }, 1));
+					return result.MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class PSABlock : Module<Tensor, Tensor>
+		internal class PSABlock : Module<Tensor, Tensor>
 		{
-			private readonly ScaledDotProductAttention attn; // can use ScaledDotProductAttention instead
+			private readonly Attention attn; // can use ScaledDotProductAttention instead
 			private readonly Sequential ffn;
 			private readonly bool add;
 
-			public PSABlock(int c, float attn_ratio = 0.5f, int num_heads = 4, bool shortcut = true) : base("PSABlock")
+			internal PSABlock(int c, float attn_ratio = 0.5f, int num_heads = 8, bool shortcut = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(PSABlock))
 			{
-				this.attn = new ScaledDotProductAttention(c);
-				this.ffn = nn.Sequential(new Conv(c, c * 2, 1), new Conv(c * 2, c, 1, act: false));
+				this.attn = new Attention(c, num_heads, attn_ratio, attentionType: AttentionType.SelfAttention, device: device, dtype: dtype);
+				this.ffn = Sequential(new Conv(c, c * 2, 1, device: device, dtype: dtype), new Conv(c * 2, c, 1, act: false, device: device, dtype: dtype));
 				this.add = shortcut;
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor x)
 			{
-				x = this.add ? (x + this.attn.forward(x)) : this.attn.forward(x);
-				x = this.add ? (x + this.ffn.forward(x)) : this.ffn.forward(x);
-				return x;
+				using (NewDisposeScope())
+				{
+					x = this.add ? (x + this.attn.forward(x)) : this.attn.forward(x);
+					x = this.add ? (x + this.ffn.forward(x)) : this.ffn.forward(x);
+					return x.MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class Attention : Module<Tensor, Tensor>
+		internal class Attention : Module<Tensor, Tensor>
 		{
-			private int num_heads;
-			private int head_dim;
-			private int key_dim;
-			private float scale;
+			private readonly int num_heads;
+			private readonly int head_dim;
+			private readonly int key_dim;
+			private readonly float scale;
 
 			private readonly Conv qkv;
 			private readonly Conv proj;
 			private readonly Conv pe;
 
-			public Attention(int dim, int num_heads = 8, float attn_ratio = 0.5f) : base("Attention")
+			private AttentionType attentionType;
+
+			internal Attention(int dim, int num_heads = 8, float attn_ratio = 0.5f, AttentionType attentionType = AttentionType.SelfAttention, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Attention))
 			{
 				this.num_heads = num_heads;
 				this.head_dim = dim / num_heads;
@@ -309,9 +334,11 @@ namespace YoloSharp
 				int nh_kd = this.key_dim * num_heads;
 				int h = dim + nh_kd * 2;
 
-				this.qkv = new Conv(dim, h, 1, act: false);
-				this.proj = new Conv(dim, dim, 1, act: false);
-				this.pe = new Conv(dim, dim, 3, 1, groups: dim, act: false);
+				this.qkv = new Conv(dim, h, 1, act: false, device: device, dtype: dtype);
+				this.proj = new Conv(dim, dim, 1, act: false, device: device, dtype: dtype);
+				this.pe = new Conv(dim, dim, 3, 1, groups: dim, act: false, device: device, dtype: dtype);
+
+				this.attentionType = attentionType;
 				RegisterComponents();
 			}
 
@@ -333,9 +360,41 @@ namespace YoloSharp
 					Tensor k = qkv_mix[1];
 					Tensor v = qkv_mix[2];
 
-					Tensor attn = q.transpose(-2, -1).matmul(k) * this.scale;
-					attn = attn.softmax(dim: -1);
-					x = (v.matmul(attn.transpose(-2, -1))).view(B, C, H, W) + this.pe.forward(v.reshape(B, C, H, W));
+					switch (attentionType)
+					{
+						case AttentionType.SelfAttention:
+							{
+								Tensor attn = q.transpose(-2, -1).matmul(k) * this.scale;
+								attn = attn.softmax(dim: -1);
+								x = (v.matmul(attn.transpose(-2, -1))).view(B, C, H, W) + this.pe.forward(v.reshape(B, C, H, W));
+								break;
+							}
+						case AttentionType.ScaledDotProductAttention:
+							{
+								q = q.transpose(-2, -1); // [B, num_heads, N, key_dim]
+								k = k.transpose(-2, -1); // [B, num_heads, N, key_dim]
+								v = v.transpose(-2, -1); // [B, num_heads, N, head_dim]
+
+								Tensor attn_output = functional.scaled_dot_product_attention(q, k, v, is_casual: false);
+
+								attn_output = attn_output.transpose(-2, -1); // [B, num_heads, N, head_dim]
+								attn_output = attn_output.contiguous();
+
+								if (B * this.num_heads * N * this.head_dim != B * C * H * W)
+								{
+									throw new InvalidOperationException("Shape mismatch: Cannot reshape attn_output to [B, C, H, W].");
+								}
+
+								attn_output = attn_output.view(B, C, H, W);
+								x = attn_output + this.pe.forward(attn_output);
+								break;
+							}
+						default:
+							{
+								throw new NotImplementedException($"Attention type {this.attentionType} is not implemented.");
+							}
+					}
+
 					x = this.proj.forward(x);
 
 					return x.MoveToOuterDisposeScope();
@@ -344,130 +403,72 @@ namespace YoloSharp
 			}
 		}
 
-		public class ScaledDotProductAttention : Module<Tensor, Tensor>
+		internal class SCDown : Module<Tensor, Tensor>
 		{
-			private int num_heads;
-			private int head_dim;
-			private int key_dim;
-
-			private readonly Conv qkv;
-			private readonly Conv proj;
-			private readonly Conv pe;
-
-			public ScaledDotProductAttention(int dim, int num_heads = 8, float attn_ratio = 0.5f) : base("Attention")
+			private readonly Conv cv1;
+			private readonly Conv cv2;
+			internal SCDown(int inChannel, int outChannel, int k, int s, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(SCDown))
 			{
-				this.num_heads = num_heads;
-				this.head_dim = dim / num_heads;
-				this.key_dim = (int)(this.head_dim * attn_ratio);
-
-				int nh_kd = this.key_dim * num_heads;
-				int h = dim + nh_kd * 2;
-
-				this.qkv = new Conv(dim, h, 1, act: false);
-				this.proj = new Conv(dim, dim, 1, act: false);
-				this.pe = new Conv(dim, dim, 3, 1, groups: dim, act: false);
+				this.cv1 = new Conv(inChannel, outChannel, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv(outChannel, outChannel, kernel_size: k, stride: s, groups: outChannel, act: false, device: device, dtype: dtype);
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
-				long B = x.shape[0];
-				long C = x.shape[1];
-				long H = x.shape[2];
-				long W = x.shape[3];
-
-				long N = H * W;
-
-				Tensor qkv = this.qkv.forward(x);
-
-				Tensor[] qkv_mix = qkv.view(B, this.num_heads, this.key_dim * 2 + this.head_dim, N).split(new long[] { this.key_dim, this.key_dim, this.head_dim }, dim: 2);
-				Tensor q = qkv_mix[0];
-				Tensor k = qkv_mix[1];
-				Tensor v = qkv_mix[2];
-
-				q = q.transpose(-2, -1); // [B, num_heads, N, key_dim]
-				k = k.transpose(-2, -1); // [B, num_heads, N, key_dim]
-				v = v.transpose(-2, -1); // [B, num_heads, N, head_dim]
-
-				Tensor attn_output = functional.scaled_dot_product_attention(q, k, v);
-
-				attn_output = attn_output.transpose(-2, -1); // [B, num_heads, N, head_dim]
-				attn_output = attn_output.contiguous();
-
-				if (B * this.num_heads * N * this.head_dim != B * C * H * W)
+				using (NewDisposeScope())
 				{
-					throw new InvalidOperationException("Shape mismatch: Cannot reshape attn_output to [B, C, H, W].");
+					return this.cv2.forward(this.cv1.forward(x)).MoveToOuterDisposeScope();
 				}
-
-				attn_output = attn_output.view(B, C, H, W);
-				x = attn_output + this.pe.forward(v.reshape(B, C, H, W));
-				x = this.proj.forward(x);
-
-				return x.MoveToOuterDisposeScope();
 			}
 		}
 
-		public class SCDown : Module<Tensor, Tensor>
+		internal class C2fCIB : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
-			public SCDown(int inChannel, int outChannel, int k, int s) : base("SCDown")
-			{
-				this.cv1 = new Conv(inChannel, outChannel, 1, 1);
-				this.cv2 = new Conv(outChannel, outChannel, kernel_size: k, stride: s, groups: outChannel, act: false);
-				RegisterComponents();
-			}
-
-			public override Tensor forward(Tensor x)
-			{
-				return this.cv2.forward(this.cv1.forward(x));
-			}
-		}
-
-		public class C2fCIB : Module<Tensor, Tensor>
-		{
-			private readonly Conv cv1;
-			private readonly Conv cv2;
-			public Sequential m = Sequential();
-			public C2fCIB(int inChannels, int outChannels, int n = 1, bool shortcut = false, bool lk = false, int g = 1, float e = 0.5f) : base("C2fCIB")
+			internal readonly Sequential m;
+			internal C2fCIB(int inChannels, int outChannels, int n = 1, bool shortcut = false, bool lk = false, int g = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C2fCIB))
 			{
 				int c = (int)(outChannels * e);
-				this.cv1 = new Conv(inChannels, 2 * c, 1, 1);
-				this.cv2 = new Conv((2 + n) * c, outChannels, 1);  // optional act=FReLU(outChannels)
+				this.cv1 = new Conv(inChannels, 2 * c, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv((2 + n) * c, outChannels, 1, device: device, dtype: dtype);  // optional act=FReLU(outChannels)
+				m = Sequential();
 				for (int i = 0; i < n; i++)
 				{
-					m = m.append(new CIB(c, c, shortcut, e: 1.0f, lk: lk));
+					m = m.append(new CIB(c, c, shortcut, e: 1.0f, lk: lk, device: device, dtype: dtype));
 				}
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor input)
 			{
-				using var _ = NewDisposeScope();
-				var y = this.cv1.forward(input).chunk(2, 1).ToList();
-				for (int i = 0; i < m.Count; i++)
+				using (NewDisposeScope())
 				{
-					y.Add(m[i].call(y.Last()));
+					var y = this.cv1.forward(input).chunk(2, 1).ToList();
+					for (int i = 0; i < m.Count; i++)
+					{
+						y.Add(m[i].call(y.Last()));
+					}
+					Tensor result = cv2.forward(cat(y, 1));
+					return result.MoveToOuterDisposeScope();
 				}
-				Tensor result = cv2.forward(cat(y, 1));
-				return result.MoveToOuterDisposeScope();
 			}
 		}
 
-		public class CIB : Module<Tensor, Tensor>
+		internal class CIB : Module<Tensor, Tensor>
 		{
-			Sequential cv1;
-			bool add;
-			public CIB(int inChannels, int outChannels, bool shortcut = true, float e = 0.5f, bool lk = false) : base("CIB")
+			private readonly Sequential cv1;
+			private readonly bool add;
+			internal CIB(int inChannels, int outChannels, bool shortcut = true, float e = 0.5f, bool lk = false, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(CIB))
 			{
 				int c = (int)(outChannels * e);  // hidden channels
 				this.cv1 = nn.Sequential(
-					new Conv(inChannels, inChannels, 3, groups: inChannels),
-					new Conv(inChannels, 2 * c, 1),
-					lk ? new RepVGGDW(2 * c) : new Conv(2 * c, 2 * c, 3, groups: 2 * c),
-					new Conv(2 * c, outChannels, 1),
-					new Conv(outChannels, outChannels, 3, groups: outChannels));
+					new Conv(inChannels, inChannels, 3, groups: inChannels, device: device, dtype: dtype),
+					new Conv(inChannels, 2 * c, 1, device: device, dtype: dtype),
+					lk ? new RepVGGDW(2 * c, device: device, dtype: dtype) : new Conv(2 * c, 2 * c, 3, groups: 2 * c, device: device, dtype: dtype),
+					new Conv(2 * c, outChannels, 1, device: device, dtype: dtype),
+					new Conv(outChannels, outChannels, 3, groups: outChannels, device: device, dtype: dtype));
 				this.add = shortcut && (inChannels == outChannels);
 
 				RegisterComponents();
@@ -475,7 +476,10 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				return this.add ? (x + this.cv1.forward(x)) : this.cv1.forward(x);
+				using (NewDisposeScope())
+				{
+					return this.add ? (x + this.cv1.forward(x)).MoveToOuterDisposeScope() : this.cv1.forward(x).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
@@ -485,21 +489,53 @@ namespace YoloSharp
 		/// This module extends the C2f architecture by incorporating area-attention and ABlock layers for improved feature
 		/// processing.It supports both area-attention and standard convolution modes.
 		/// </summary>
-		public class A2C2f : Module<Tensor, Tensor>
+		internal class A2C2f : Module<Tensor, Tensor>
 		{
+			/// <summary>
+			/// Initial 1x1 convolution layer that reduces input channels to hidden channels.
+			/// </summary>
 			private readonly Conv cv1;
+
+			/// <summary>
+			/// Final 1x1 convolution layer that processes concatenated features.
+			/// </summary>
 			private readonly Conv cv2;
+
+			/// <summary>
+			/// Learnable parameter for residual scaling when using area attention.
+			/// </summary>
 			private readonly Parameter? gamma;
+
+			/// <summary>
+			/// List of either ABlock or C3k modules for feature processing.
+			/// </summary>
 			private readonly Sequential m;
-			public A2C2f(int c1, int c2, int n = 1, bool a2 = true, int area = 1, bool residual = false, float mlp_ratio = 2.0f, float e = 0.5f, int g = 1, bool shortcut = true) : base(nameof(A2C2f))
+
+			/// <summary>
+			/// Initialize Area-Attention C2f module.
+			/// </summary>
+			/// <param name="c1">Number of input channels.</param>
+			/// <param name="c2">Number of output channels.</param>
+			/// <param name="n">Number of ABlock or C3k modules to stack.</param>
+			/// <param name="a2">Whether to use area attention blocks. If False, uses C3k blocks instead.</param>
+			/// <param name="area">Number of areas the feature map is divided.</param>
+			/// <param name="residual">Whether to use residual connections with learnable gamma parameter.</param>
+			/// <param name="mlp_ratio">Expansion ratio for MLP hidden dimension.</param>
+			/// <param name="e">Channel expansion ratio for hidden channels.</param>
+			/// <param name="g">Number of groups for grouped convolutions.</param>
+			/// <param name="shortcut">Whether to use shortcut connections in C3k blocks.</param>
+			/// <param name="device"></param>
+			/// <param name="dtype"></param>
+			/// <exception cref="Exception"></exception>
+			internal A2C2f(int c1, int c2, int n = 1, bool a2 = true, int area = 1, bool residual = false, float mlp_ratio = 2.0f, float e = 0.5f, int g = 1, bool shortcut = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(A2C2f))
 			{
 				int c_ = (int)(c2 * e);
 				if (c_ % 32 != 0)
 				{
 					throw new Exception("Dimension of ABlock be a multiple of 32.");
 				}
-				this.cv1 = new Conv(c1, c_, 1, 1);
-				this.cv2 = new Conv((1 + n) * c_, c2, 1);
+				this.cv1 = new Conv(c1, c_, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv((1 + n) * c_, c2, 1, device: device, dtype: dtype);
 
 				this.gamma = (a2 && residual) ? nn.Parameter(0.01 * torch.ones(c2), requires_grad: true) : null;
 				m = Sequential();
@@ -510,13 +546,13 @@ namespace YoloSharp
 						var seq = Sequential();
 						for (int j = 0; j < 2; j++)
 						{
-							seq.append(new ABlock(c_, c_ / 32, mlp_ratio, area));
+							seq.append(new ABlock(c_, c_ / 32, mlp_ratio, area, device: device, dtype: dtype));
 						}
 						m.append(seq);
 					}
 					else
 					{
-						var c3k = new C3k(c_, c_, 2, shortcut, g);
+						C3k c3k = new C3k(c_, c_, 2, shortcut, g, device: device, dtype: dtype);
 						m.append(c3k);
 					}
 				}
@@ -527,19 +563,19 @@ namespace YoloSharp
 			{
 				using (NewDisposeScope())
 				{
-					var y = new List<Tensor> { cv1.forward(x) };
+					List<Tensor> y = new List<Tensor> { cv1.forward(x) };
 
 					foreach (var module in m.children())
 					{
 						y.Add(((Module<Tensor, Tensor>)module).forward(y.Last()));
 					}
 
-					var y_cat = torch.cat(y.ToArray(), 1);
-					var output = cv2.forward(y_cat);
+					Tensor y_cat = torch.cat(y.ToArray(), 1);
+					Tensor output = cv2.forward(y_cat);
 
 					if (gamma is not null)
 					{
-						var gamma_view = gamma.view(new long[] { -1, gamma.shape[0], 1, 1 });
+						Tensor gamma_view = gamma.view(new long[] { -1, gamma.shape[0], 1, 1 });
 						return (x + gamma_view * output).MoveToOuterDisposeScope();
 					}
 					return output.MoveToOuterDisposeScope();
@@ -553,18 +589,16 @@ namespace YoloSharp
 		/// It uses a novel area-based attention approach that is more efficient than traditional self-attention while
 		/// maintaining effectiveness
 		/// </summary>
-		public class ABlock : Module<Tensor, Tensor>
+		internal class ABlock : Module<Tensor, Tensor>
 		{
 			private readonly AAttn attn;
-			//private readonly SDPAAAttn attn;
 			private readonly Sequential mlp;
-			private Action<Module> initWeights;  // Weight initialization function
-			public ABlock(int dim, int num_heads, float mlp_ratio = 1.2f, int area = 1) : base(nameof(ABlock))
+			private readonly Action<Module> initWeights;  // Weight initialization function
+			internal ABlock(int dim, int num_heads, float mlp_ratio = 1.2f, int area = 1, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(ABlock))
 			{
-				this.attn = new AAttn(dim, num_heads: num_heads, area: area);
-				//this.attn = new SDPAAAttn(dim, num_heads: num_heads, area: area);
+				this.attn = new AAttn(dim, num_heads: num_heads, area: area, attentionType: AttentionType.SelfAttention, device: device, dtype: dtype);
 				int mlp_hidden_dim = (int)(dim * mlp_ratio);
-				this.mlp = Sequential(new Conv(dim, mlp_hidden_dim, 1), new Conv(mlp_hidden_dim, dim, 1, act: false));
+				this.mlp = Sequential(new Conv(dim, mlp_hidden_dim, 1, device: device, dtype: dtype), new Conv(mlp_hidden_dim, dim, 1, act: false, device: device, dtype: dtype));
 				// Initialize weights
 				initWeights = m =>
 				{
@@ -581,8 +615,11 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				x = x + this.attn.forward(x);
-				return x + this.mlp.forward(x);
+				using (NewDisposeScope())
+				{
+					x = x + this.attn.forward(x);
+					return (x + this.mlp.forward(x)).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
@@ -593,7 +630,7 @@ namespace YoloSharp
 		/// making it particularly effective for object detection tasks.
 
 		/// </summary>
-		public class AAttn : Module<Tensor, Tensor>
+		internal class AAttn : Module<Tensor, Tensor>
 		{
 			private readonly int area;
 			private readonly int num_heads;
@@ -602,147 +639,101 @@ namespace YoloSharp
 			private readonly Conv qkv;
 			private readonly Conv proj;
 			private readonly Conv pe;
-			public AAttn(int dim, int num_heads, int area = 1) : base(nameof(AAttn))
+			private readonly AttentionType attentionType;
+
+			internal AAttn(int dim, int num_heads, int area = 1, AttentionType attentionType = AttentionType.SelfAttention, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(AAttn))
 			{
+				this.attentionType = attentionType;
 				this.area = area;
 				this.num_heads = num_heads;
 				this.head_dim = dim / num_heads;
 				int all_head_dim = head_dim * this.num_heads;
 
-				this.qkv = new Conv(dim, all_head_dim * 3, 1, act: false);
-				this.proj = new Conv(all_head_dim, dim, 1, act: false);
-				this.pe = new Conv(all_head_dim, dim, 7, 1, 3, groups: dim, act: false);
+				this.qkv = new Conv(dim, all_head_dim * 3, 1, act: false, device: device, dtype: dtype);
+				this.proj = new Conv(all_head_dim, dim, 1, act: false, device: device, dtype: dtype);
+				this.pe = new Conv(all_head_dim, dim, 7, 1, 3, groups: dim, act: false, bias: true, device: device, dtype: dtype);
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
-				long B = x.shape[0];
-				long C = x.shape[1];
-				long H = x.shape[2];
-				long W = x.shape[3];
-				long N = H * W;
-
-				Tensor qkv = this.qkv.forward(x).flatten(2).transpose(1, 2);
-
-				if (this.area > 1)
+				using (NewDisposeScope())
 				{
-					qkv = qkv.reshape(B * this.area, N / this.area, C * 3);
-					B = qkv.shape[0];
-					N = qkv.shape[1];
+					long B = x.shape[0];
+					long C = x.shape[1];
+					long H = x.shape[2];
+					long W = x.shape[3];
+					long N = H * W;
+
+					Tensor qkv = this.qkv.forward(x).flatten(2).transpose(1, 2);
+
+					if (this.area > 1)
+					{
+						qkv = qkv.reshape(B * this.area, N / this.area, C * 3);
+						B = qkv.shape[0];
+						N = qkv.shape[1];
+					}
+					Tensor[] qkv_mix = qkv.view(B, N, this.num_heads, this.head_dim * 3).permute(0, 2, 3, 1).split(new long[] { this.head_dim, this.head_dim, this.head_dim }, dim: 2);
+					Tensor q = qkv_mix[0];
+					Tensor k = qkv_mix[1];
+					Tensor v = qkv_mix[2];
+					if (this.attentionType == AttentionType.SelfAttention)
+					{
+						Tensor attn = (q.transpose(-2, -1).matmul(k)) * (float)Math.Pow(this.head_dim, -0.5);
+						attn = attn.softmax(dim: -1);
+						x = v.matmul(attn.transpose(-2, -1));
+						x = x.permute(0, 3, 1, 2);
+						v = v.permute(0, 3, 1, 2);
+					}
+					else if (this.attentionType == AttentionType.ScaledDotProductAttention)
+					{
+						// 调整维度为 (B, num_heads, seq_len, head_dim)
+						q = q.permute(0, 1, 3, 2); // [B, nh, N, hd]
+						k = k.permute(0, 1, 3, 2);
+						v = v.permute(0, 1, 3, 2);
+
+						// 使用内置的scaled_dot_product_attention
+						x = torch.nn.functional.scaled_dot_product_attention(q, k, v);
+
+						// 调整输出维度与原始实现一致
+						x = x.permute(0, 2, 1, 3)  // [B, N, nh, hd]
+							.reshape(B, N, -1);     // [B, N, C]
+
+						// 处理v的维度与原始实现一致
+						v = v.permute(0, 2, 1, 3)  // [B, N, nh, hd]
+							.reshape(B, N, -1);     // [B, N, C]
+					}
+					else
+					{
+						throw new NotImplementedException($"Attention type {this.attentionType} is not implemented.");
+					}
+
+					if (this.area > 1)
+					{
+						x = x.reshape(B / this.area, N * this.area, C);
+						v = v.reshape(B / this.area, N * this.area, C);
+						B = x.shape[0];
+						N = x.shape[1];
+					}
+
+					x = x.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
+					v = v.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
+					x = x + this.pe.forward(v);
+					return this.proj.forward(x).MoveToOuterDisposeScope();
 				}
-
-				Tensor[] qkv_mix = qkv.view(B, N, this.num_heads, this.head_dim * 3)
-						.permute(0, 2, 3, 1)
-						.split(new long[] { this.head_dim, this.head_dim, this.head_dim }, dim: 2);
-				Tensor q = qkv_mix[0];
-				Tensor k = qkv_mix[1];
-				Tensor v = qkv_mix[2];
-
-				Tensor attn = (q.transpose(-2, -1).matmul(k)) * (float)Math.Pow(this.head_dim, -0.5);
-				attn = attn.softmax(dim: -1);
-				x = v.matmul(attn.transpose(-2, -1));
-				x = x.permute(0, 3, 1, 2);
-				v = v.permute(0, 3, 1, 2);
-
-				if (this.area > 1)
-				{
-					x = x.reshape(B / this.area, N * this.area, C);
-					v = v.reshape(B / this.area, N * this.area, C);
-					B = x.shape[0];
-					N = x.shape[1];
-				}
-
-				x = x.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
-				v = v.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
-				x = x + this.pe.forward(v);
-				return this.proj.forward(x).MoveToOuterDisposeScope();
 			}
 		}
 
-		public class SDPAAAttn : Module<Tensor, Tensor>
-		{
-			private readonly int area;
-			private readonly int num_heads;
-			private readonly int head_dim;
-
-			private readonly Conv qkv;
-			private readonly Conv proj;
-			private readonly Conv pe;
-			public SDPAAAttn(int dim, int num_heads, int area = 1) : base(nameof(SDPAAAttn))
-			{
-				this.area = area;
-				this.num_heads = num_heads;
-				this.head_dim = dim / num_heads;
-				int all_head_dim = head_dim * this.num_heads;
-
-				this.qkv = new Conv(dim, all_head_dim * 3, 1, act: false);
-				this.proj = new Conv(all_head_dim, dim, 1, act: false);
-				this.pe = new Conv(all_head_dim, dim, 7, 1, 3, groups: dim, act: false);
-				RegisterComponents();
-			}
-
-			public override Tensor forward(Tensor x)
-			{
-				using var _ = NewDisposeScope();
-				long B = x.shape[0];
-				long C = x.shape[1];
-				long H = x.shape[2];
-				long W = x.shape[3];
-				long N = H * W;
-
-				Tensor qkv = this.qkv.forward(x).flatten(2).transpose(1, 2);
-
-				if (this.area > 1)
-				{
-					qkv = qkv.reshape(B * this.area, N / this.area, C * 3);
-					B = qkv.shape[0];
-					N = qkv.shape[1];
-				}
-
-				Tensor[] qkv_mix = qkv.view(B, N, this.num_heads, this.head_dim * 3)
-						.permute(0, 2, 3, 1)
-						.split(new long[] { this.head_dim, this.head_dim, this.head_dim }, dim: 2);
-				Tensor q = qkv_mix[0];
-				Tensor k = qkv_mix[1];
-				Tensor v = qkv_mix[2];
-
-				q = q.permute(0, 1, 3, 2);
-				k = k.permute(0, 1, 3, 2);
-				v = v.permute(0, 1, 3, 2);
-
-				Tensor x_attn = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_casual: false);
-
-				x_attn = x_attn.permute(0, 1, 3, 2);
-				x = x_attn.permute(0, 3, 1, 2);
-				v = v.permute(0, 3, 1, 2).contiguous();
-
-				if (this.area > 1)
-				{
-					x = x.reshape(B / this.area, N * this.area, C);
-					v = v.reshape(B / this.area, N * this.area, C);
-					B = x.shape[0];
-					N = x.shape[1];
-				}
-
-				x = x.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
-				v = v.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous();
-				x = x + this.pe.forward(v);
-				return this.proj.forward(x).MoveToOuterDisposeScope();
-			}
-		}
-
-		public class RepVGGDW : Module<Tensor, Tensor>
+		internal class RepVGGDW : Module<Tensor, Tensor>
 		{
 			private readonly Conv conv;
 			private readonly Conv conv1;
 			private readonly int dim;
 			private readonly Module<Tensor, Tensor> act;
-			public RepVGGDW(int ed) : base("RepVGGDW")
+			internal RepVGGDW(int ed, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(RepVGGDW))
 			{
-				this.conv = new Conv(ed, ed, 7, 1, 3, groups: ed, act: false);
-				this.conv1 = new Conv(ed, ed, 3, 1, 1, groups: ed, act: false);
+				this.conv = new Conv(ed, ed, 7, 1, 3, groups: ed, act: false, device: device, dtype: dtype);
+				this.conv1 = new Conv(ed, ed, 3, 1, 1, groups: ed, act: false, device: device, dtype: dtype);
 				this.dim = ed;
 				this.act = nn.SiLU();
 
@@ -750,17 +741,20 @@ namespace YoloSharp
 			}
 			public override Tensor forward(Tensor x)
 			{
-				return this.act.forward(this.conv.forward(x) + this.conv1.forward(x));
+				using (NewDisposeScope())
+				{
+					return this.act.forward(this.conv.forward(x) + this.conv1.forward(x)).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class DFL : Module<Tensor, Tensor>
+		internal class DFL : Module<Tensor, Tensor>
 		{
 			private readonly Conv2d conv;
 			private readonly int c1;
-			public DFL(int c1 = 16) : base("DFL")
+			internal DFL(int c1 = 16, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(DFL))
 			{
-				this.conv = nn.Conv2d(c1, 1, 1, bias: false);
+				this.conv = nn.Conv2d(c1, 1, 1, bias: false, device: device, dtype: dtype);
 				Tensor x = torch.arange(c1, dtype: torch.float32);
 				this.conv.weight = nn.Parameter(x.view(1, c1, 1, 1));
 				this.c1 = c1;
@@ -770,28 +764,34 @@ namespace YoloSharp
 
 			public override Tensor forward(Tensor x)
 			{
-				long b = x.shape[0];  // batch, channels, anchors
-				long a = x.shape[2];
+				using (NewDisposeScope())
+				{
+					long b = x.shape[0];  // batch, channels, anchors
+					long a = x.shape[2];
 
-				return this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a);
+					return this.conv.forward(x.view(b, 4, this.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class Concat : Module<Tensor[], Tensor>
+		internal class Concat : Module<Tensor[], Tensor>
 		{
 			private readonly int dim;
-			public Concat(int dim = 1) : base("Concat")
+			internal Concat(int dim = 1) : base(nameof(Concat))
 			{
 				this.dim = dim;
 			}
 
 			public override Tensor forward(Tensor[] input)
 			{
-				return torch.concat(input, dim: dim);
+				using (NewDisposeScope())
+				{
+					return torch.concat(input, dim: dim).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
-		public class Yolov5Detect : Module<Tensor[], Tensor[]>
+		internal class Yolov5Detect : Module<Tensor[], Tensor[]>
 		{
 			bool dynamic = false;  // force grid reconstruction
 			bool export = false;// export mode
@@ -803,14 +803,14 @@ namespace YoloSharp
 			//private List<Tensor> grid; // 存储网格坐标的列表
 
 			//private readonly Tensor anchors;
-			private readonly Sequential m = Sequential();
+			private readonly Sequential m;
 			private float[][] anchors;
 			private readonly int[] ch;
 
 			private torch.Device device;
 			private torch.ScalarType scalarType;
 
-			public Yolov5Detect(int nc, int[] ch, float[][] anchors, bool inplace = true) : base("Yolov5Detect")
+			internal Yolov5Detect(int nc, int[] ch, float[][] anchors, bool inplace = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Yolov5Detect))
 			{
 				this.nc = nc;
 				no = nc + 5;// =85 每个类别需添加位置与置信度
@@ -819,51 +819,63 @@ namespace YoloSharp
 				this.anchors = anchors;
 				this.ch = ch;
 				//grid = new List<Tensor>(nl);
-
+				m = Sequential();
 				for (int i = 0; i < ch.Length; i++)
 				{
-					m = m.append(Conv2d(ch[i], no * na, 1));
+					m = m.append(Conv2d(ch[i], no * na, 1, device: device, dtype: dtype));
 				}
 				RegisterComponents();
 			}
 
 			public override Tensor[] forward(Tensor[] x)
 			{
-				this.device = x[0].device;
-				this.scalarType = x[0].dtype;
-
-				List<Tensor> z = new List<Tensor>();
-				Tensor stride = tensor(new int[] { 8, 16, 32 }, dtype: scalarType, device: device);  //strides computed during build
-				for (int i = 0; i < nl; i++)
+				using (NewDisposeScope())
 				{
-					x[i] = ((Module<Tensor, Tensor>)m[i]).forward(x[i]);
-					long bs = x[i].shape[0];
-					int ny = (int)x[i].shape[2];
-					int nx = (int)x[i].shape[3];
-					x[i] = x[i].view(bs, na, no, ny, nx).permute(0, 1, 3, 4, 2).contiguous();
-					if (!training)
+					this.device = x[0].device;
+					this.scalarType = x[0].dtype;
+
+					List<Tensor> z = new List<Tensor>();
+					Tensor stride = tensor(new int[] { 8, 16, 32 }, dtype: scalarType, device: device);  //strides computed during build
+					for (int i = 0; i < nl; i++)
 					{
-						var (grid, anchor_grid) = _make_grid(nx, ny, i);
-						Tensor[] re = x[i].sigmoid().split(new long[] { 2, 2, nc + 1 }, 4);
-						Tensor xy = re[0];
-						Tensor wh = re[1];
-						Tensor conf = re[2];
+						x[i] = ((Module<Tensor, Tensor>)m[i]).forward(x[i]);
+						long bs = x[i].shape[0];
+						int ny = (int)x[i].shape[2];
+						int nx = (int)x[i].shape[3];
+						x[i] = x[i].view(bs, na, no, ny, nx).permute(0, 1, 3, 4, 2).contiguous();
+						if (!training)
+						{
+							var (grid, anchor_grid) = _make_grid(nx, ny, i);
+							Tensor[] re = x[i].sigmoid().split(new long[] { 2, 2, nc + 1 }, 4);
+							Tensor xy = re[0];
+							Tensor wh = re[1];
+							Tensor conf = re[2];
 
-						xy = (xy * 2 + grid) * stride[i];  // xy
-						wh = (wh * 2).pow(2) * anchor_grid;  // wh
-						Tensor y = cat(new Tensor[] { xy, wh, conf }, 4);
-						z.Add(y.view(bs, na * nx * ny, no));
+							xy = (xy * 2 + grid) * stride[i];  // xy
+							wh = (wh * 2).pow(2) * anchor_grid;  // wh
+							Tensor y = cat(new Tensor[] { xy, wh, conf }, 4);
+							z.Add(y.view(bs, na * nx * ny, no));
+						}
 					}
-				}
 
-				if (training)
-				{
-					return x;
-				}
-				else
-				{
-					var list = new List<Tensor>() { cat(z, 1) };
-					return list.ToArray();
+					if (training)
+					{
+						for (int i = 0; i < x.Length; i++)
+						{
+							x[i] = x[i].MoveToOuterDisposeScope();
+						}
+						return x;
+					}
+					else
+					{
+						var list = new List<Tensor>() { cat(z, 1) };
+						Tensor[] result = list.ToArray();
+						for (int i = 0; i < result.Length; i++)
+						{
+							result[i] = result[i].MoveToOuterDisposeScope();
+						}
+						return result;
+					}
 				}
 			}
 
@@ -900,7 +912,7 @@ namespace YoloSharp
 			}
 		}
 
-		public class YolovDetect : Module<Tensor[], Tensor[]>
+		internal class YolovDetect : Module<Tensor[], Tensor[]>
 		{
 			private int max_det = 300; // max_det
 			private long[] shape = null;
@@ -916,7 +928,7 @@ namespace YoloSharp
 			private readonly ModuleList<Sequential> cv3 = new ModuleList<Sequential>();
 			private readonly Module<Tensor, Tensor> dfl;
 
-			public YolovDetect(int nc, int[] ch, bool legacy = false) : base("YolovDetect")
+			internal YolovDetect(int nc, int[] ch, bool legacy = false, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(YolovDetect))
 			{
 				this.nc = nc; // number of classes
 				this.nl = ch.Length;// number of detection layers
@@ -929,19 +941,19 @@ namespace YoloSharp
 
 				foreach (int x in ch)
 				{
-					cv2.append(Sequential(new Conv(x, c2, 3), new Conv(c2, c2, 3), nn.Conv2d(c2, 4 * this.reg_max, 1)));
+					cv2.append(Sequential(new Conv(x, c2, 3, device: device, dtype: dtype), new Conv(c2, c2, 3, device: device, dtype: dtype), nn.Conv2d(c2, 4 * this.reg_max, 1, device: device, dtype: dtype)));
 
 					if (legacy)
 					{
-						cv3.append(Sequential(Sequential(new DWConv(x, x, 3), new Conv(x, c3, 1)), Sequential(new DWConv(c3, c3, 3), new Conv(c3, c3, 1)), nn.Conv2d(c3, this.nc, 1)));
+						cv3.append(Sequential(Sequential(new DWConv(x, x, 3, device: device, dtype: dtype), new Conv(x, c3, 1, device: device, dtype: dtype)), Sequential(new DWConv(c3, c3, 3, device: device, dtype: dtype), new Conv(c3, c3, 1, device: device, dtype: dtype)), nn.Conv2d(c3, this.nc, 1, device: device, dtype: dtype)));
 					}
 					else
 					{
-						cv3.append(Sequential(new Conv(x, c3, 3), new Conv(c3, c3, 3), nn.Conv2d(c3, this.nc, 1)));
+						cv3.append(Sequential(new Conv(x, c3, 3, device: device, dtype: dtype), new Conv(c3, c3, 3, device: device, dtype: dtype), nn.Conv2d(c3, this.nc, 1, device: device, dtype: dtype)));
 					}
 				}
 
-				this.dfl = this.reg_max > 1 ? new DFL(this.reg_max) : nn.Identity();
+				this.dfl = this.reg_max > 1 ? new DFL(this.reg_max, device: device, dtype: dtype) : nn.Identity();
 				//RegisterComponents();
 			}
 
@@ -1055,25 +1067,27 @@ namespace YoloSharp
 
 		}
 
-		public class Proto : Module<Tensor, Tensor>
+		internal class Proto : Module<Tensor, Tensor>
 		{
 			private readonly Conv cv1;
 			private readonly Conv cv2;
 			private readonly Conv cv3;
 			private readonly ConvTranspose2d upsample;
-			public Proto(int c1, int c_ = 256, int c2 = 32) : base("Proto")
+			internal Proto(int c1, int c_ = 256, int c2 = 32, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Proto))
 			{
-				this.cv1 = new Conv(c1, c_, kernel_size: 3);
-				this.upsample = nn.ConvTranspose2d(c_, c_, 2, 2, 0, bias: true);  // nn.Upsample(scale_factor=2, mode='nearest')
-				this.cv2 = new Conv(c_, c_, kernel_size: 3);
-				this.cv3 = new Conv(c_, c2, kernel_size: 1);
+				this.cv1 = new Conv(c1, c_, kernel_size: 3, device: device, dtype: dtype);
+				this.upsample = nn.ConvTranspose2d(c_, c_, 2, 2, 0, bias: true, device: device, dtype: dtype);  // nn.Upsample(scale_factor=2, mode='nearest')
+				this.cv2 = new Conv(c_, c_, kernel_size: 3, device: device, dtype: dtype);
+				this.cv3 = new Conv(c_, c2, kernel_size: 1, device: device, dtype: dtype);
 				RegisterComponents();
 			}
 
 			public override Tensor forward(Tensor x)
 			{
-				using var _ = NewDisposeScope();
-				return this.cv3.forward(this.cv2.forward(this.upsample.forward(this.cv1.forward(x)))).MoveToOuterDisposeScope();
+				using (NewDisposeScope())
+				{
+					return this.cv3.forward(this.cv2.forward(this.upsample.forward(this.cv1.forward(x)))).MoveToOuterDisposeScope();
+				}
 			}
 		}
 
@@ -1085,7 +1099,7 @@ namespace YoloSharp
 			private readonly int c4;
 			private readonly ModuleList<Sequential> cv4 = new ModuleList<Sequential>();
 
-			public Segment(int[] ch, int nc = 80, int nm = 32, int npr = 256, bool legacy = false) : base(nc, ch, legacy)
+			public Segment(int[] ch, int nc = 80, int nm = 32, int npr = 256, bool legacy = false, Device? device = null, torch.ScalarType? dtype = null) : base(nc, ch, legacy, device, dtype)
 			{
 				this.nm = nm; // number of masks
 				this.npr = npr;  // number of protos
@@ -1094,7 +1108,7 @@ namespace YoloSharp
 
 				foreach (int x in ch)
 				{
-					cv4.append(Sequential(new Conv(x, c4, 3), new Conv(c4, c4, 3), nn.Conv2d(c4, this.nm, 1)));
+					cv4.append(Sequential(new Conv(x, c4, 3, device: device, dtype: dtype), new Conv(c4, c4, 3, device: device, dtype: dtype), nn.Conv2d(c4, this.nm, 1, device: device, dtype: dtype)));
 				}
 				RegisterComponents();
 			}

@@ -38,11 +38,11 @@ namespace YoloSharp
 
 			yolo = yoloType switch
 			{
-				YoloType.Yolov5 => new Yolov5(socrCount, yoloSize),
-				YoloType.Yolov5u => new Yolov5u(socrCount, yoloSize),
-				YoloType.Yolov8 => new Yolov8(socrCount, yoloSize),
-				YoloType.Yolov11 => new Yolov11(socrCount, yoloSize),
-				YoloType.Yolov12 => new Yolov12(socrCount, yoloSize),
+				YoloType.Yolov5 => new Yolov5(socrCount, yoloSize, device, this.dtype),
+				YoloType.Yolov5u => new Yolov5u(socrCount, yoloSize, device, this.dtype),
+				YoloType.Yolov8 => new Yolov8(socrCount, yoloSize, device, this.dtype),
+				YoloType.Yolov11 => new Yolov11(socrCount, yoloSize, device, this.dtype),
+				YoloType.Yolov12 => new Yolov12(socrCount, yoloSize, device, this.dtype),
 				_ => throw new NotImplementedException(),
 			};
 
@@ -69,7 +69,7 @@ namespace YoloSharp
 				_ => throw new NotImplementedException(),
 			};
 
-			//Tools.TransModelFromSafetensors(yolo, @"D:\DeepLearning\yolo\ultralytics\yolov12x.safetensors", "yolov12x.bin");
+			//Tools.TransModelFromSafetensors(yolo, @".\output.safetensors", "yolov11n.bin");
 
 		}
 
@@ -233,7 +233,6 @@ namespace YoloSharp
 			else
 			{
 				torch.ScalarType modelType = state_dict.Values.First().dtype;
-				yolo.to(modelType);
 				List<string> skipList = new List<string>();
 				long nc = 0;
 
@@ -278,7 +277,8 @@ namespace YoloSharp
 					{
 						skipList.Clear();
 					}
-				};
+				}
+				;
 
 				yolo.to(modelType);
 				var (miss, err) = yolo.load_state_dict(state_dict, skip: skipList);
