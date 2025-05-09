@@ -1103,7 +1103,7 @@ namespace YoloSharp
 			{
 				this.nm = nm; // number of masks
 				this.npr = npr;  // number of protos
-				this.proto = new Proto(ch[0], this.npr, this.nm);  // protos
+				this.proto = new Proto(ch[0], this.npr, this.nm, device: device, dtype: dtype);  // protos
 				c4 = Math.Max(ch[0] / 4, this.nm);
 
 				foreach (int x in ch)

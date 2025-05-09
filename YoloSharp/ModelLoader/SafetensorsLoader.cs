@@ -2,7 +2,7 @@
 using System.Text;
 using TorchSharp;
 
-namespace YoloSharp
+namespace YoloSharp.ModelLoader
 {
 	internal class SafetensorsLoader
 	{
@@ -46,10 +46,6 @@ namespace YoloSharp
 						continue;
 					}
 					long[] shapeArray = shape.ToObject<long[]>();
-					//if (shapeArray.Length < 1)
-					//{
-					//	shapeArray = new long[] { 1 };
-					//}
 
 					torch.ScalarType scalar_type = torch.ScalarType.Float32;
 					switch (dtype.ToString())
@@ -105,19 +101,6 @@ namespace YoloSharp
 			ulong offset = tensor.Offset[0];
 			int size = (int)(tensor.Offset[1] - tensor.Offset[0]);
 			return ReadByteFromFile(inputFileName, bodyPosition, (long)offset, size);
-		}
-
-		internal class CommonTensor
-		{
-			public string Name { get; set; }
-			public torch.ScalarType Type { get; set; } = torch.ScalarType.Float32;
-			public List<long> Shape { get; set; } = new List<long>();
-			public List<ulong> Stride { get; set; } = new List<ulong>();
-			public string DataNameInZipFile { get; set; }
-			public string FileName { get; set; }
-			public List<ulong> Offset { get; set; } = new List<ulong>();
-			public long BodyPosition { get; set; }
-
 		}
 	}
 }

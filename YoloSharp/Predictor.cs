@@ -46,8 +46,6 @@ namespace YoloSharp
 				_ => throw new NotImplementedException(),
 			};
 
-			yolo.to(this.device, this.dtype);
-
 			loss = yoloType switch
 			{
 				YoloType.Yolov5 => new Loss.Yolov5DetectionLoss(this.socrCount),
@@ -57,8 +55,6 @@ namespace YoloSharp
 				YoloType.Yolov12 => new Loss.YoloDetectionLoss(this.socrCount),
 				_ => throw new NotImplementedException(),
 			};
-			loss = loss.to(this.device, this.dtype);
-
 			predict = yoloType switch
 			{
 				YoloType.Yolov5 => new Predict.Yolov5Predict(),
@@ -221,6 +217,11 @@ namespace YoloSharp
 			return predResults;
 		}
 
+		/// <summary>
+		/// Load model from path.
+		/// </summary>
+		/// <param name="path">The Model path</param>
+		/// <param name="skipNcNotEqualLayers">If nc not equals the label count in model, please set it true otherwise set it false.</param>
 		public void LoadModel(string path, bool skipNcNotEqualLayers = false)
 		{
 			Dictionary<string, Tensor> state_dict = Lib.LoadModel(path, skipNcNotEqualLayers);
@@ -238,54 +239,39 @@ namespace YoloSharp
 
 				if (skipNcNotEqualLayers)
 				{
-					switch (yoloType)
+					string? layerKey = yoloType switch
 					{
-						case YoloType.Yolov5:
-							{
-								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.24.m")).ToList();
-								nc = state_dict[skipList[0]].shape[0] / 3 - 5;
-								break;
-							}
-						case YoloType.Yolov5u:
-							{
-								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.24.cv3")).ToList();
-								nc = state_dict[skipList[0]].shape[0];
-								break;
-							}
-						case YoloType.Yolov8:
-							{
-								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.22.cv3")).ToList();
-								nc = state_dict[skipList[0]].shape[0];
-								break;
-							}
-						case YoloType.Yolov11:
-							{
-								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.23.cv3")).ToList();
-								nc = state_dict[skipList[3]].shape[0];
-								break;
-							}
-						case YoloType.Yolov12:
-							{
-								skipList = state_dict.Keys.Select(x => x).Where(x => x.Contains("model.21.cv3")).ToList();
-								nc = state_dict[skipList[12]].shape[0];
-								break;
-							}
-						default:
-							break;
+						YoloType.Yolov5 => "model.24.m",
+						YoloType.Yolov5u => "model.24.cv3",
+						YoloType.Yolov8 => "model.22.cv3",
+						YoloType.Yolov11 => "model.23.cv3",
+						YoloType.Yolov12 => "model.21.cv3",
+						_ => null,
+					};
+
+					if (layerKey != null)
+					{
+						skipList = state_dict.Keys.Where(x => x.Contains(layerKey)).ToList();
+						nc = yoloType switch
+						{
+							YoloType.Yolov5 => state_dict[skipList[0]].shape[0] / 3 - 5,
+							_ => state_dict[skipList.FirstOrDefault() ?? string.Empty].shape[0]
+						};
 					}
+
 					if (nc == socrCount)
 					{
 						skipList.Clear();
 					}
 				}
-				;
+
 
 				yolo.to(modelType);
 				var (miss, err) = yolo.load_state_dict(state_dict, skip: skipList);
 				if (skipList.Count > 0)
 				{
 					Console.WriteLine("Waring! You are skipping nc reference layers.");
-					Console.WriteLine("This will get wrong result in Predict, sort count in weight loaded is " + nc);
+					Console.WriteLine("This will get wrong result in Predict, sort count loaded in weight is " + nc);
 				}
 				yolo.to(dtype);
 			}

@@ -766,7 +766,7 @@ namespace YoloSharp
 					new Concat(),                                                                                       // cat head P5
 					new C2f(widthSize1024 + widthSize512, widthSize1024, depthSize3, device: device, dtype: dtype),                                  // 21 (P5/32-large)
 
-					new Segment(ch, nc, npr: widthSize256, device: device, dtype: dtype)                                                                            // Detect(P3, P4, P5)
+					new Segment(ch, nc, npr: widthSize256, device: device, dtype: dtype)                                                             // Detect(P3, P4, P5)
 					);
 				RegisterComponents();
 			}

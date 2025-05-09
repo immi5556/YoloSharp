@@ -9,13 +9,13 @@ namespace YoloSharpDemo
 		static void Main(string[] args)
 		{
 			string trainDataPath = @"..\..\..\Assets\DataSets\coco128"; // Training data path, it should be the same as coco dataset.
-			string valDataPath = @"..\..\..\Assets\DataSets\coco128"; // If valDataPath is "", it will use trainDataPath as validation data.
+			string valDataPath = string.Empty; // If valDataPath is "", it will use trainDataPath as validation data.
 			string outputPath = "result";    // Trained model output path.
-			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov11n.bin"; // Pretrained model path.
+			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n.bin"; // Pretrained model path.
 			string predictImagePath = @"..\..\..\Assets\TestImage\zidane.jpg";
 			int batchSize = 16;
 			int sortCount = 80;
-			int epochs = 10;
+			int epochs = 100;
 			float predictThreshold = 0.4f;
 			float iouThreshold = 0.4f;
 
@@ -30,14 +30,14 @@ namespace YoloSharpDemo
 			Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
 			// Train model
 			predictor.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
-			//predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: true);
+			predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: true);
 
 			// ImagePredict image
-			//predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
+			predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
 			List<Predictor.PredictResult> predictResult = predictor.ImagePredict(predictImage, predictThreshold, iouThreshold);
 			var resultImage = predictImage.Clone();
 
-			//// Create segmenter
+			////Create segmenter
 			//Segmenter segmenter = new Segmenter(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
 			//segmenter.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
 

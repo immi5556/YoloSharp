@@ -81,7 +81,7 @@ namespace YoloSharp
 		{
 			private readonly int reg_max;
 
-			public DFLoss(int reg_max = 16) : base("dfloss")
+			public DFLoss(int reg_max = 16) : base(nameof(DFLoss))
 			{
 				this.reg_max = reg_max;
 			}
@@ -735,7 +735,7 @@ namespace YoloSharp
 			private readonly float hyp_dfl = 1.5f;
 			private readonly bool over_laps = true;
 
-			public SegmentationLoss(int nc = 80, int reg_max = 16, int tal_topk = 10) : base("SegmentationLoss")
+			public SegmentationLoss(int nc = 80, int reg_max = 16, int tal_topk = 10) : base(nameof(SegmentationLoss))
 			{
 				this.stride = new int[] { 8, 16, 32 };
 				this.bce = BCEWithLogitsLoss(reduction: Reduction.None);
@@ -771,8 +771,6 @@ namespace YoloSharp
 
 					Tensor imgsz = torch.tensor(feats[0].shape[2..], device: this.device, dtype: this.dtype) * this.stride[0]; // image size (h,w)
 					var (anchor_points, stride_tensor) = make_anchors(feats, this.stride, 0.5f);
-
-
 					var indices = torch.tensor(new long[] { 1, 0, 1, 0 }, device: device);
 
 					// Select elements from imgsz
