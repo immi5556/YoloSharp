@@ -23,13 +23,10 @@ namespace YoloSharp
 
 			foreach (var li in safetensorTensors)
 			{
-				//if (!li.Shape.SequenceEqual(new long[] { 1 }))
-				{
-					Tensor t = torch.zeros(li.Shape.ToArray(), dtype: li.Type);
-					byte[] dt = safetensorLoader.ReadByteFromFile(li);
-					t.bytes = dt;
-					dict.Add(li.Name, t);
-				}
+				Tensor t = torch.zeros(li.Shape.ToArray(), dtype: li.Type);
+				byte[] dt = safetensorLoader.ReadByteFromFile(li);
+				t.bytes = dt;
+				dict.Add(li.Name, t);
 			}
 			var state_dict = model.state_dict();
 			var (loadMissing, unexp) = model.load_state_dict(dict, false);

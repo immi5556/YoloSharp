@@ -537,7 +537,7 @@ namespace YoloSharp
 				this.cv1 = new Conv(c1, c_, 1, 1, device: device, dtype: dtype);
 				this.cv2 = new Conv((1 + n) * c_, c2, 1, device: device, dtype: dtype);
 
-				this.gamma = (a2 && residual) ? nn.Parameter(0.01 * torch.ones(c2), requires_grad: true) : null;
+				this.gamma = (a2 && residual) ? nn.Parameter(0.01 * torch.ones(c2,device:device,dtype:dtype), requires_grad: true) : null;
 				m = Sequential();
 				for (int i = 0; i < n; i++)
 				{
@@ -755,7 +755,7 @@ namespace YoloSharp
 			internal DFL(int c1 = 16, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(DFL))
 			{
 				this.conv = nn.Conv2d(c1, 1, 1, bias: false, device: device, dtype: dtype);
-				Tensor x = torch.arange(c1, dtype: torch.float32);
+				Tensor x = torch.arange(c1, device: device, dtype: torch.float32);
 				this.conv.weight = nn.Parameter(x.view(1, c1, 1, 1));
 				this.c1 = c1;
 

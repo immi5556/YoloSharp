@@ -1,4 +1,5 @@
-﻿using TorchSharp;
+﻿using System.Text.RegularExpressions;
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -51,7 +52,7 @@ namespace YoloSharp
 				YoloType.Yolov11 => new Loss.SegmentationLoss(this.socrCount),
 				_ => throw new NotImplementedException("Yolo type not supported."),
 			};
-			//Tools.TransModelFromSafetensors(yolo, @".\output.safetensors", "yolov11n-seg.bin");
+			//Tools.TransModelFromSafetensors(yolo, @".\yolov8n-seg.safetensors", @".\PreTrainedModels\yolov11x-seg.bin");
 		}
 
 
@@ -246,17 +247,17 @@ namespace YoloSharp
 				List<string> skipList = new();
 				if (skipNcNotEqualLayers)
 				{
-					string? layerKey = yoloType switch
+					string? layerPattern = yoloType switch
 					{
-						YoloType.Yolov8 => "model.22.cv3",
-						YoloType.Yolov11 => "model.23.cv3",
+						YoloType.Yolov8 => @"model\.22\.cv3",
+						YoloType.Yolov11 => @"model\.23\.cv3",
 						_ => null
 					};
 
-					if (layerKey != null)
+					if (layerPattern != null)
 					{
-						skipList = state_dict.Keys.Where(x => x.Contains(layerKey)).ToList();
-						if (state_dict[skipList.First()].shape[0] == socrCount)
+						skipList = state_dict.Keys.Where(x => Regex.IsMatch(x, layerPattern)).ToList();
+						if (state_dict[skipList.LastOrDefault(a=>a.EndsWith(".bias"))!].shape[0] == socrCount)
 						{
 							skipList.Clear();
 						}

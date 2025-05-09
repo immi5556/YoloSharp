@@ -245,59 +245,53 @@ namespace YoloSharp
 
 			public Yolov8(int nc = 80, YoloSize yoloSize = YoloSize.n, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Yolov8))
 			{
-				(float depth_multiple, float width_multiple, int max_channels) = yoloSize switch
+				var (depth_multiple, width_multiple, max_channels) = yoloSize switch
 				{
 					YoloSize.n => (0.34f, 0.25f, 1024),
 					YoloSize.s => (0.34f, 0.5f, 1024),
-					YoloSize.m => (0.67f, 0.75f, 576),     // max size =  768 in yolo8.yaml, but it is 576 in real yolo model and yolov8m.pt
+					YoloSize.m => (0.67f, 0.75f, 576),
 					YoloSize.l => (1.0f, 1.0f, 512),
-					YoloSize.x => (1.0f, 1.25f, 640),      // max size =  512 in yolo8.yaml, but it is 640 in real yolo model and yolov8x.pt
+					YoloSize.x => (1.0f, 1.25f, 640),
 					_ => throw new ArgumentOutOfRangeException(nameof(yoloSize), yoloSize, null)
 				};
 
-				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
-				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
-				int widthSize256 = Math.Min((int)(256 * width_multiple), max_channels);
-				int widthSize512 = Math.Min((int)(512 * width_multiple), max_channels);
-				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
-				int depthSize3 = (int)(3 * depth_multiple);
-				int depthSize6 = (int)(6 * depth_multiple);
-				int depthSize9 = (int)(9 * depth_multiple);
-
-				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
+				int[] widths = new List<int> { 64, 128, 256, 512, 1024 }.Select(w => Math.Min((int)(w * width_multiple), max_channels)).ToArray();
+				int[] depths = new List<int> { 3, 6, 9 }.Select(d => (int)(d * depth_multiple)).ToArray();
+				int[] ch = { widths[2], widths[3], widths[4] };
 
 				model = ModuleList<Module>(
 					// backbone:
-					new Conv(3, widthSize64, 3, 2, device: device, dtype: dtype),                                                                     // 0-P1/2
-					new Conv(widthSize64, widthSize128, 3, 2, device: device, dtype: dtype),                                                          // 1-P2/4
-					new C2f(widthSize128, widthSize128, depthSize3, true, device: device, dtype: dtype),
-					new Conv(widthSize128, widthSize256, 3, 2, device: device, dtype: dtype),                                                         // 3-P3/8
-					new C2f(widthSize256, widthSize256, depthSize6, true, device: device, dtype: dtype),
-					new Conv(widthSize256, widthSize512, 3, 2, device: device, dtype: dtype),                                                         // 5-P4/16
-					new C2f(widthSize512, widthSize512, depthSize6, true, device: device, dtype: dtype),
-					new Conv(widthSize512, widthSize1024, 3, 2, device: device, dtype: dtype),                                                        // 7-P5/32
-					new C2f(widthSize1024, widthSize1024, depthSize3, true, device: device, dtype: dtype),
-					new SPPF(widthSize1024, widthSize1024, 5, device: device, dtype: dtype),                                                          // 9
+					new Conv(3, widths[0], 3, 2, device: device, dtype: dtype),
+					new Conv(widths[0], widths[1], 3, 2, device: device, dtype: dtype),
+					new C2f(widths[1], widths[1], depths[0], true, device: device, dtype: dtype),
+					new Conv(widths[1], widths[2], 3, 2, device: device, dtype: dtype),
+					new C2f(widths[2], widths[2], depths[1], true, device: device, dtype: dtype),
+					new Conv(widths[2], widths[3], 3, 2, device: device, dtype: dtype),
+					new C2f(widths[3], widths[3], depths[1], true, device: device, dtype: dtype),
+					new Conv(widths[3], widths[4], 3, 2, device: device, dtype: dtype),
+					new C2f(widths[4], widths[4], depths[0], true, device: device, dtype: dtype),
+					new SPPF(widths[4], widths[4], 5, device: device, dtype: dtype),
 
 					// head:
 					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
-					new Concat(),                                                                                       // cat backbone P4
-					new C2f(widthSize512 + widthSize1024, widthSize512, depthSize3, device: device, dtype: dtype),                                    // 12
+					new Concat(),
+					new C2f(widths[3] + widths[4], widths[3], depths[0], device: device, dtype: dtype),
 
 					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
-					new Concat(),                                                                                       // cat backbone P3
-					new C2f(widthSize256 + widthSize512, widthSize256, depthSize3, device: device, dtype: dtype),                                     // 15 (P3/8-small)
+					new Concat(),
+					new C2f(widths[2] + widths[3], widths[2], depths[0], device: device, dtype: dtype),
 
-					new Conv(widthSize256, widthSize256, 3, 2, device: device, dtype: dtype),
-					new Concat(),                                                                                       // cat head P4
-					new C2f(widthSize256 + widthSize512, widthSize512, depthSize3, device: device, dtype: dtype),                                    // 18 (P4/16-medium)
+					new Conv(widths[2], widths[2], 3, 2, device: device, dtype: dtype),
+					new Concat(),
+					new C2f(widths[2] + widths[3], widths[3], depths[0], device: device, dtype: dtype),
 
-					new Conv(widthSize512, widthSize512, 3, 2, device: device, dtype: dtype),
-					new Concat(),                                                                                       // cat head P5
-					new C2f(widthSize1024 + widthSize512, widthSize1024, depthSize3, device: device, dtype: dtype),                                  // 21 (P5/32-large)
+					new Conv(widths[3], widths[3], 3, 2, device: device, dtype: dtype),
+					new Concat(),
+					new C2f(widths[4] + widths[3], widths[4], depths[0], device: device, dtype: dtype),
 
-					new YolovDetect(nc, ch, device: device, dtype: dtype)                                                                            // Detect(P3, P4, P5)
-					);
+					new YolovDetect(nc, ch, device: device, dtype: dtype)
+				);
+
 				RegisterComponents();
 			}
 

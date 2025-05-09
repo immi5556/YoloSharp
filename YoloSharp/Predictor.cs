@@ -1,4 +1,5 @@
-﻿using TorchSharp;
+﻿using System.Text.RegularExpressions;
+using TorchSharp;
 using TorchSharp.Modules;
 using static TorchSharp.torch;
 using static TorchSharp.torch.nn;
@@ -65,8 +66,7 @@ namespace YoloSharp
 				_ => throw new NotImplementedException(),
 			};
 
-			//Tools.TransModelFromSafetensors(yolo, @".\output.safetensors", "yolov11n.bin");
-
+			//Tools.TransModelFromSafetensors(yolo, @".\yolov5x.safetensors", @".\PreTrainedModels\yolov5x.bin");
 		}
 
 		public void Train(string trainDataPath, string valDataPath = "", string outputPath = "output", int imageSize = 640, int epochs = 100, float lr = 0.0001f, int batchSize = 8, int numWorkers = 0, bool useMosaic = true)
@@ -239,23 +239,23 @@ namespace YoloSharp
 
 				if (skipNcNotEqualLayers)
 				{
-					string? layerKey = yoloType switch
+					string? layerPattern = yoloType switch
 					{
-						YoloType.Yolov5 => "model.24.m",
-						YoloType.Yolov5u => "model.24.cv3",
-						YoloType.Yolov8 => "model.22.cv3",
-						YoloType.Yolov11 => "model.23.cv3",
-						YoloType.Yolov12 => "model.21.cv3",
+						YoloType.Yolov5 => @"model\.24\.m",
+						YoloType.Yolov5u => @"model\.24\.cv3",
+						YoloType.Yolov8 => @"model\.22\.cv3",
+						YoloType.Yolov11 => @"model\.23\.cv3",
+						YoloType.Yolov12 => @"model\.21\.cv3",
 						_ => null,
 					};
 
-					if (layerKey != null)
+					if (layerPattern != null)
 					{
-						skipList = state_dict.Keys.Where(x => x.Contains(layerKey)).ToList();
+						skipList = state_dict.Keys.Where(x => Regex.IsMatch(x, layerPattern)).ToList();
 						nc = yoloType switch
 						{
 							YoloType.Yolov5 => state_dict[skipList[0]].shape[0] / 3 - 5,
-							_ => state_dict[skipList.FirstOrDefault() ?? string.Empty].shape[0]
+							_ => state_dict[skipList.LastOrDefault(a => a.EndsWith(".bias"))!].shape[0]
 						};
 					}
 

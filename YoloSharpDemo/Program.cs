@@ -16,18 +16,19 @@ namespace YoloSharpDemo
 			int batchSize = 16;
 			int sortCount = 80;
 			int epochs = 100;
-			float predictThreshold = 0.4f;
-			float iouThreshold = 0.4f;
+			float predictThreshold = 0.5f;
+			float iouThreshold = 0.45f;
 
 			YoloType yoloType = YoloType.Yolov8;
 			DeviceType deviceType = DeviceType.CUDA;
-			ScalarType dtype = ScalarType.Float32;
+			ScalarType dtype = ScalarType.Float16;
 			YoloSize yoloSize = YoloSize.n;
 
 			MagickImage predictImage = new MagickImage(predictImagePath);
 
 			// Create predictor
 			Predictor predictor = new Predictor(sortCount, yoloType: yoloType, deviceType: deviceType, yoloSize: yoloSize, dtype: dtype);
+
 			// Train model
 			predictor.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
 			predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: true);
