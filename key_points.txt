@@ -1,0 +1,5 @@
+
+car scrach training created and latest branch -> "car-scratch-created"
+
+
+main brach is managed t sync with yolosharp base branch
