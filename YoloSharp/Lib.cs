@@ -1,12 +1,15 @@
 ﻿using ImageMagick;
+using System.Diagnostics.Metrics;
+using System.Threading.Channels;
 using TorchSharp;
 using static TorchSharp.torch;
+using static TorchSharp.torchvision;
 
 namespace YoloSharp
 {
 	internal class Lib
 	{
-		public static Dictionary<string, Tensor> LoadModel(string path, bool skipNcNotEqualLayers = false)
+		internal static Dictionary<string, Tensor> LoadModel(string path, bool skipNcNotEqualLayers = false)
 		{
 			long Decode(BinaryReader reader)
 			{
@@ -59,7 +62,7 @@ namespace YoloSharp
 		/// <param name="x">The bounding boxes to clip</param>
 		/// <param name="shape">The shape of the image</param>
 		/// <returns>The clipped boxes</returns>
-		public static Tensor ClipBox(Tensor x, float[] shape)
+		internal static Tensor ClipBox(Tensor x, float[] shape)
 		{
 			using var _ = NewDisposeScope();
 			Tensor box = torch.zeros_like(x);
@@ -80,7 +83,7 @@ namespace YoloSharp
 			}
 		}
 
-		public static MagickImage GetImageFromTensor(Tensor tensor)
+		internal static MagickImage GetImageFromTensor(Tensor tensor)
 		{
 			MemoryStream memoryStream = new MemoryStream();
 			torchvision.io.write_png(tensor.cpu(), memoryStream);
@@ -88,5 +91,27 @@ namespace YoloSharp
 			return new MagickImage(memoryStream, MagickFormat.Png);
 		}
 
+		/// <summary>
+		/// Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the	top-left corner and(x2, y2) is the bottom-right corner.Note: ops per 2 channels faster than per channel.
+		/// </summary>
+		/// <param name="x">The input bounding box coordinates in (x, y, width, height) format.</param>
+		/// <returns>The bounding box coordinates in (x1, y1, x2, y2) format.</returns>
+		internal static Tensor xywh2xyxy(Tensor x)
+		{
+			using (NewDisposeScope())
+			{
+				if (x.shape.Last() != 4)
+				{
+					throw new ArgumentException("input shape last dimension expected 4 but input shape is {x.shape}");
+				}
+
+				Tensor y = empty_like(x);  // faster than clone/copy
+				Tensor xy = x[TensorIndex.Ellipsis, ..2];  //centers
+				Tensor wh = x[TensorIndex.Ellipsis, 2..] / 2;  // half width-height
+				y[TensorIndex.Ellipsis, ..2] = xy - wh; //# top left xy
+				y[TensorIndex.Ellipsis, 2..] = xy + wh; //bottom right xy
+				return y.MoveToOuterDisposeScope();
+			}
+		}
 	}
 }
