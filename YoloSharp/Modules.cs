@@ -29,42 +29,46 @@ namespace YoloSharp
 				RegisterComponents();
 			}
 
-			public override Tensor forward(Tensor input)
+			public override Tensor forward(Tensor x)
 			{
 				using (NewDisposeScope())
 				{
 					Module<Tensor, Tensor> ac = act ? SiLU(true) : Identity();
-					Tensor result = ac.forward(bn.forward(conv.forward(input)));
-					return result.MoveToOuterDisposeScope();
+
+					if (this.training)
+					{
+						Tensor result = ac.forward(bn.forward(conv.forward(x)));
+						return result.MoveToOuterDisposeScope();
+					}
+					else
+					{
+						using (no_grad())
+						{
+							// Prepare filters
+							Conv2d fusedconv = nn.Conv2d(conv.in_channels, conv.out_channels, kernel_size: (conv.kernel_size[0], conv.kernel_size[1]), stride: (conv.stride[0], conv.stride[1]), padding: (conv.padding[0], conv.padding[1]), dilation: (conv.dilation[0], conv.dilation[1]), groups: conv.groups, bias: true, device: conv.weight.device, dtype: conv.weight.dtype);
+							Tensor w_conv = conv.weight.view(conv.out_channels, -1);
+							Tensor w_bn = torch.diag(bn.weight.div(torch.sqrt(bn.eps + bn.running_var)));
+							fusedconv.weight.copy_(torch.mm(w_bn, w_conv).view(fusedconv.weight.shape));
+
+							// Prepare spatial bias
+							Tensor b_conv = (conv.bias is null) ? torch.zeros(conv.weight.shape[0], dtype: conv.weight.dtype, device: conv.weight.device) : conv.bias;
+							Tensor b_bn = bn.bias - bn.weight.mul(bn.running_mean).div(torch.sqrt(bn.running_var + bn.eps));
+							fusedconv.bias.copy_(torch.mm(w_bn, b_conv.reshape(-1, 1)).reshape(-1) + b_bn);
+
+							Tensor result = ac.forward(fusedconv.forward(x));
+							return result.MoveToOuterDisposeScope();
+						}
+					}
+
 				}
 			}
 		}
 
-		internal class DWConv : Module<Tensor, Tensor>
+		internal class DWConv : Conv
 		{
-			private readonly Conv2d conv;
-			private readonly BatchNorm2d bn;
-			private readonly bool act;
-
-			internal DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true, bool bias = false, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(DWConv))
+			internal DWConv(int in_channels, int out_channels, int kernel_size = 1, int stride = 1, int d = 1, bool act = true, bool bias = false, Device? device = null, torch.ScalarType? dtype = null) : base(in_channels, out_channels, kernel_size, stride, groups: (int)BigInteger.GreatestCommonDivisor(in_channels, out_channels), d: d, bias: bias, act: act, device: device, dtype: dtype)
 			{
-				int groups = (int)BigInteger.GreatestCommonDivisor(in_channels, out_channels);
-				int padding = (kernel_size) / 2;
-				conv = Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups: groups, dilation: d, bias: bias, device: device, dtype: dtype);
-				bn = BatchNorm2d(out_channels, device: device, dtype: dtype);
-				this.act = act;
-				RegisterComponents();
-			}
 
-			public override Tensor forward(Tensor input)
-			{
-				using (NewDisposeScope())
-				{
-					var x = conv.forward(input);
-					Module<Tensor, Tensor> ac = act ? SiLU() : Identity();
-					Tensor result = ac.forward(bn.forward(x));
-					return result.MoveToOuterDisposeScope();
-				}
 			}
 		}
 
@@ -77,8 +81,8 @@ namespace YoloSharp
 			internal Bottleneck(int inChannels, int outChannels, (int, int) kernal, bool shortcut = true, int groups = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(Bottleneck))
 			{
 				int c = (int)(outChannels * e);
-				cv1 = new Conv(inChannels, c, kernal.Item1, 1, device: device, dtype: dtype);
-				cv2 = new Conv(c, outChannels, kernal.Item2, 1, groups: groups, device: device, dtype: dtype);
+				cv1 = new Conv(inChannels, c, kernal.Item1, device: device, dtype: dtype);
+				cv2 = new Conv(c, outChannels, kernal.Item2, groups: groups, device: device, dtype: dtype);
 				add = shortcut && inChannels == outChannels;
 				RegisterComponents();
 			}
@@ -148,9 +152,9 @@ namespace YoloSharp
 
 		internal class C2f : Module<Tensor, Tensor>
 		{
-			private readonly Conv cv1;
-			private readonly Conv cv2;
-			public readonly int c;
+			internal readonly Conv cv1;
+			internal readonly Conv cv2;
+			internal readonly int c;
 			internal Sequential m;
 			internal C2f(int inChannels, int outChannels, int n = 1, bool shortcut = false, int groups = 1, float e = 0.5f, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C2f))
 			{
@@ -182,24 +186,25 @@ namespace YoloSharp
 
 		internal class C3k2 : Module<Tensor, Tensor>
 		{
-			private readonly Conv cv1;
-			private readonly Conv cv2;
-			internal readonly Sequential m;
+			internal readonly Conv cv1;
+			internal readonly Conv cv2;
+			internal readonly ModuleList<Module> m;
+			internal readonly int c;
 			internal C3k2(int inChannels, int outChannels, int n = 1, bool c3k = false, float e = 0.5f, int groups = 1, bool shortcut = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(C3k2))
 			{
-				int c = (int)(outChannels * e);
-				this.cv1 = new Conv(inChannels, 2 * c, 1, 1, device: device, dtype: dtype);
-				this.cv2 = new Conv((2 + n) * c, outChannels, 1, device: device, dtype: dtype);  // optional act=FReLU(outChannels)
-				m = Sequential();
+				this.c = (int)(outChannels * e);
+				this.cv1 = new Conv(inChannels, 2 * this.c, 1, 1, device: device, dtype: dtype);
+				this.cv2 = new Conv((2 + n) * this.c, outChannels, 1, device: device, dtype: dtype);  // optional act=FReLU(outChannels)
+				m = new ModuleList<Module>();
 				for (int i = 0; i < n; i++)
 				{
 					if (c3k)
 					{
-						this.m = this.m.append(new C3k(c, c, 2, shortcut, groups, device: device, dtype: dtype));
+						this.m.append(new C3k(this.c, this.c, 2, shortcut, groups, device: device, dtype: dtype));
 					}
 					else
 					{
-						this.m = this.m.append(new Bottleneck(c, c, (3, 3), shortcut, groups, device: device, dtype: dtype));
+						this.m.append(new Bottleneck(this.c, this.c, (3, 3), shortcut, groups, device: device, dtype: dtype));
 					}
 				}
 				RegisterComponents();
@@ -212,7 +217,7 @@ namespace YoloSharp
 					List<Tensor> y = this.cv1.forward(input).chunk(2, 1).ToList();
 					for (int i = 0; i < m.Count; i++)
 					{
-						y.Add(m[i].call(y.Last()));
+						y.Add(((Module<Tensor, Tensor>)m[i]).forward(y.Last()));
 					}
 					Tensor result = cv2.forward(cat(y, 1));
 					return result.MoveToOuterDisposeScope();
@@ -492,7 +497,7 @@ namespace YoloSharp
 		internal class A2C2f : Module<Tensor, Tensor>
 		{
 			/// <summary>
-			/// Initial 1x1 convolution layer that reduces input channels to hidden channels.
+			/// Initial 1x1 convolution layer that reduces x channels to hidden channels.
 			/// </summary>
 			private readonly Conv cv1;
 
@@ -514,7 +519,7 @@ namespace YoloSharp
 			/// <summary>
 			/// Initialize Area-Attention C2f module.
 			/// </summary>
-			/// <param name="c1">Number of input channels.</param>
+			/// <param name="c1">Number of x channels.</param>
 			/// <param name="c2">Number of output channels.</param>
 			/// <param name="n">Number of ABlock or C3k modules to stack.</param>
 			/// <param name="a2">Whether to use area attention blocks. If False, uses C3k blocks instead.</param>
@@ -537,7 +542,7 @@ namespace YoloSharp
 				this.cv1 = new Conv(c1, c_, 1, 1, device: device, dtype: dtype);
 				this.cv2 = new Conv((1 + n) * c_, c2, 1, device: device, dtype: dtype);
 
-				this.gamma = (a2 && residual) ? nn.Parameter(0.01 * torch.ones(c2,device:device,dtype:dtype), requires_grad: true) : null;
+				this.gamma = (a2 && residual) ? nn.Parameter(0.01 * torch.ones(c2, device: device, dtype: dtype), requires_grad: true) : null;
 				m = Sequential();
 				for (int i = 0; i < n; i++)
 				{
@@ -626,7 +631,7 @@ namespace YoloSharp
 
 		/// <summary>
 		/// Area-attention module for YOLO models, providing efficient attention mechanisms.
-		/// This module implements an area-based attention mechanism that processes input features in a spatially-aware manner,
+		/// This module implements an area-based attention mechanism that processes x features in a spatially-aware manner,
 		/// making it particularly effective for object detection tasks.
 
 		/// </summary>
@@ -755,7 +760,7 @@ namespace YoloSharp
 			internal DFL(int c1 = 16, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(DFL))
 			{
 				this.conv = nn.Conv2d(c1, 1, 1, bias: false, device: device, dtype: dtype);
-				Tensor x = torch.arange(c1, device: device, dtype: torch.float32);
+				Tensor x = torch.arange(c1, device: device, dtype: dtype);
 				this.conv.weight = nn.Parameter(x.view(1, c1, 1, 1));
 				this.c1 = c1;
 
@@ -928,7 +933,7 @@ namespace YoloSharp
 			private readonly ModuleList<Sequential> cv3 = new ModuleList<Sequential>();
 			private readonly Module<Tensor, Tensor> dfl;
 
-			internal YolovDetect(int nc, int[] ch, bool legacy = false, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(YolovDetect))
+			internal YolovDetect(int nc, int[] ch, bool legacy = true, Device? device = null, torch.ScalarType? dtype = null) : base(nameof(YolovDetect))
 			{
 				this.nc = nc; // number of classes
 				this.nl = ch.Length;// number of detection layers
@@ -945,11 +950,15 @@ namespace YoloSharp
 
 					if (legacy)
 					{
-						cv3.append(Sequential(Sequential(new DWConv(x, x, 3, device: device, dtype: dtype), new Conv(x, c3, 1, device: device, dtype: dtype)), Sequential(new DWConv(c3, c3, 3, device: device, dtype: dtype), new Conv(c3, c3, 1, device: device, dtype: dtype)), nn.Conv2d(c3, this.nc, 1, device: device, dtype: dtype)));
+						cv3.append(Sequential(new Conv(x, c3, 3, device: device, dtype: dtype), new Conv(c3, c3, 3, device: device, dtype: dtype), nn.Conv2d(c3, this.nc, 1, device: device, dtype: dtype)));
 					}
 					else
 					{
-						cv3.append(Sequential(new Conv(x, c3, 3, device: device, dtype: dtype), new Conv(c3, c3, 3, device: device, dtype: dtype), nn.Conv2d(c3, this.nc, 1, device: device, dtype: dtype)));
+						cv3.append(Sequential(
+							Sequential(new DWConv(x, x, 3, device: device, dtype: dtype), new Conv(x, c3, 1, device: device, dtype: dtype)),
+							Sequential(new DWConv(c3, c3, 3, device: device, dtype: dtype), new Conv(c3, c3, 1, device: device, dtype: dtype)),
+							nn.Conv2d(c3, this.nc, 1, device: device, dtype: dtype)
+							));
 					}
 				}
 
@@ -1099,7 +1108,7 @@ namespace YoloSharp
 			private readonly int c4;
 			private readonly ModuleList<Sequential> cv4 = new ModuleList<Sequential>();
 
-			public Segment(int[] ch, int nc = 80, int nm = 32, int npr = 256, bool legacy = false, Device? device = null, torch.ScalarType? dtype = null) : base(nc, ch, legacy, device, dtype)
+			public Segment(int[] ch, int nc = 80, int nm = 32, int npr = 256, bool legacy = true, Device? device = null, torch.ScalarType? dtype = null) : base(nc, ch, legacy, device, dtype)
 			{
 				this.nm = nm; // number of masks
 				this.npr = npr;  // number of protos

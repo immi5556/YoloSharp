@@ -354,47 +354,45 @@ namespace YoloSharp
 					_ => throw new ArgumentOutOfRangeException(nameof(yoloSize), yoloSize, null)
 				};
 
-				int widthSize64 = Math.Min((int)(64 * width_multiple), max_channels);
-				int widthSize128 = Math.Min((int)(128 * width_multiple), max_channels);
-				int widthSize256 = Math.Min((int)(256 * width_multiple), max_channels);
-				int widthSize512 = Math.Min((int)(512 * width_multiple), max_channels);
-				int widthSize1024 = Math.Min((int)(1024 * width_multiple), max_channels);
-				int depthSize2 = (int)(2 * depth_multiple);
-
-				int[] ch = new int[] { widthSize256, widthSize512, widthSize1024 };
+				int[] baseWidths = { 64, 128, 256, 512, 1024 };
+				int[] widths = baseWidths.Select(w => Math.Min((int)(w * width_multiple), max_channels)).ToArray();
+				int depthSize = (int)(2 * depth_multiple);
+				int[] ch = { widths[2], widths[3], widths[4] };
 
 				model = new ModuleList<Module>(
-					new Conv(3, widthSize64, 3, 2, device: device, dtype: dtype),                                                                     // 0-P1/2
-					new Conv(widthSize64, widthSize128, 3, 2, device: device, dtype: dtype),                                                          // 1-P2/4
-					new C3k2(widthSize128, widthSize256, depthSize2, useC3k, e: 0.25f, device: device, dtype: dtype),
-					new Conv(widthSize256, widthSize256, 3, 2, device: device, dtype: dtype),                                                         // 3-P3/8
-					new C3k2(widthSize256, widthSize512, depthSize2, useC3k, e: 0.25f, device: device, dtype: dtype),
-					new Conv(widthSize512, widthSize512, 3, 2, device: device, dtype: dtype),                                                         // 5-P4/16
-					new C3k2(widthSize512, widthSize512, depthSize2, c3k: true, device: device, dtype: dtype),
-					new Conv(widthSize512, widthSize1024, 3, 2, device: device, dtype: dtype),                                                        // 7-P5/32
-					new C3k2(widthSize1024, widthSize1024, depthSize2, c3k: true, device: device, dtype: dtype),
-					new SPPF(widthSize1024, widthSize1024, 5, device: device, dtype: dtype),                                                          // 9
-					new C2PSA(widthSize1024, widthSize1024, depthSize2, device: device, dtype: dtype),                                                //10
+					new Conv(3, widths[0], 3, 2, device: device, dtype: dtype),
+					new Conv(widths[0], widths[1], 3, 2, device: device, dtype: dtype),
+					new C3k2(widths[1], widths[2], depthSize, useC3k, e: 0.25f, device: device, dtype: dtype),
+					new Conv(widths[2], widths[2], 3, 2, device: device, dtype: dtype),
+					new C3k2(widths[2], widths[3], depthSize, useC3k, e: 0.25f, device: device, dtype: dtype),
+					new Conv(widths[3], widths[3], 3, 2, device: device, dtype: dtype),
+					new C3k2(widths[3], widths[3], depthSize, c3k: true, device: device, dtype: dtype),
+					new Conv(widths[3], widths[4], 3, 2, device: device, dtype: dtype),
+					new C3k2(widths[4], widths[4], depthSize, c3k: true, device: device, dtype: dtype),
+					new SPPF(widths[4], widths[4], 5, device: device, dtype: dtype),
+					new C2PSA(widths[4], widths[4], depthSize, device: device, dtype: dtype),
 
 					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
-					new Concat(),                                                                                       // cat backbone P4
-					new C3k2(widthSize1024 + widthSize512, widthSize512, depthSize2, useC3k, device: device, dtype: dtype),                           // 13
+					new Concat(),
+					new C3k2(widths[4] + widths[3], widths[3], depthSize, useC3k, device: device, dtype: dtype),
 
 					Upsample(scale_factor: new double[] { 2, 2 }, mode: UpsampleMode.Nearest),
-					new Concat(),                                                                                       // cat backbone P3
-					new C3k2(widthSize512 + widthSize512, widthSize256, depthSize2, useC3k, device: device, dtype: dtype),                            // 16 (P3/8-small)
+					new Concat(),
+					new C3k2(widths[3] + widths[3], widths[2], depthSize, useC3k, device: device, dtype: dtype),
 
-					new Conv(widthSize256, widthSize256, 3, 2, device: device, dtype: dtype),
-					new Concat(),                                                                                       // cat head P4
-					new C3k2(widthSize512 + widthSize256, widthSize512, depthSize2, useC3k, device: device, dtype: dtype),                            // 19 (P4/16-medium)
+					new Conv(widths[2], widths[2], 3, 2, device: device, dtype: dtype),
+					new Concat(),
+					new C3k2(widths[3] + widths[2], widths[3], depthSize, useC3k, device: device, dtype: dtype),
 
-					new Conv(widthSize512, widthSize512, 3, 2, device: device, dtype: dtype),
-					new Concat(),                                                                                       // cat head P5
-					new C3k2(widthSize1024 + widthSize512, widthSize1024, depthSize2, c3k: true, device: device, dtype: dtype),                       // 22 (P5/32-large)
+					new Conv(widths[3], widths[3], 3, 2, device: device, dtype: dtype),
+					new Concat(),
+					new C3k2(widths[4] + widths[3], widths[4], depthSize, c3k: true, device: device, dtype: dtype),
 
-					new YolovDetect(nc, ch, true, device: device, dtype: dtype)                                                                       // Detect(P3, P4, P5)
-					);
+					new YolovDetect(nc, ch, false, device: device, dtype: dtype)
+				);
+
 				RegisterComponents();
+
 			}
 
 			public override Tensor[] forward(Tensor x)
@@ -403,7 +401,7 @@ namespace YoloSharp
 				List<Tensor> outputs = new List<Tensor>();
 				for (int i = 0; i < 11; i++)
 				{
-					var md = ((Module<Tensor, Tensor>)model[i]);
+					Module<Tensor, Tensor> md = ((Module<Tensor, Tensor>)model[i]);
 					x = md.forward(x);
 					if (i == 4 || i == 6 || i == 10)
 					{
@@ -427,7 +425,7 @@ namespace YoloSharp
 				x = ((Module<Tensor[], Tensor>)model[21]).forward(new Tensor[] { x, outputs[2] });
 				Tensor p22 = ((Module<Tensor, Tensor>)model[22]).forward(x);
 
-				var list = ((Module<Tensor[], Tensor[]>)model[23]).forward(new Tensor[] { p16, p19, p22 });
+				Tensor[] list = ((Module<Tensor[], Tensor[]>)model[23]).forward(new Tensor[] { p16, p19, p22 });
 				for (int i = 0; i < list.Length; i++)
 				{
 					list[i] = list[i].MoveToOuterDisposeScope();
@@ -488,7 +486,7 @@ namespace YoloSharp
 					new Concat(),                                                                                       // cat head P5
 					new C3k2(widthSize1024 + widthSize512, widthSize1024, depthSize2, c3k: true, device: device, dtype: dtype),                       // 20 (P5/32-large)
 
-					new YolovDetect(nc, ch, true, device: device, dtype: dtype)                                                                       // Detect(P3, P4, P5)
+					new YolovDetect(nc, ch, false, device: device, dtype: dtype)                                                                       // Detect(P3, P4, P5)
 					);
 				RegisterComponents();
 			}
@@ -903,7 +901,7 @@ namespace YoloSharp
 					new Concat(),                                                                                       // cat head P5
 					new C3k2(widthSize1024 + widthSize512, widthSize1024, depthSize2, c3k: true, device: device, dtype: dtype),                       // 22 (P5/32-large)
 
-					new Segment(ch, nc, npr: widthSize256, legacy: true, device: device, dtype: dtype)                                                // Detect(P3, P4, P5)
+					new Segment(ch, nc, npr: widthSize256, legacy: false, device: device, dtype: dtype)                                                // Detect(P3, P4, P5)
 					);
 				RegisterComponents();
 			}

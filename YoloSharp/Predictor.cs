@@ -66,7 +66,7 @@ namespace YoloSharp
 				_ => throw new NotImplementedException(),
 			};
 
-			//Tools.TransModelFromSafetensors(yolo, @".\yolov5x.safetensors", @".\PreTrainedModels\yolov5x.bin");
+			//Tools.TransModelFromSafetensors(yolo, @".\yolov11n.safetensors", @".\yolov11n.bin");
 		}
 
 		public void Train(string trainDataPath, string valDataPath = "", string outputPath = "output", int imageSize = 640, int epochs = 100, float lr = 0.0001f, int batchSize = 8, int numWorkers = 0, bool useMosaic = true)
@@ -187,19 +187,18 @@ namespace YoloSharp
 			padWidth = padWidth == 32 ? 0 : padWidth;
 
 			Tensor input = torch.nn.functional.pad(orgImage, new long[] { 0, padWidth, 0, padHeight }, PaddingModes.Zeros);
-			yolo.eval();
 
+			yolo.eval();
 			Tensor[] tensors = yolo.forward(input);
 
-			//Predict.YoloPredict predict = new Predict.YoloPredict(PredictThreshold, IouThreshold);
 			Tensor results = predict.forward(tensors[0], PredictThreshold, IouThreshold);
 			List<PredictResult> predResults = new List<PredictResult>();
 			for (int i = 0; i < results.shape[0]; i++)
 			{
-				int rw = results[i, 2].ToInt32();
-				int rh = results[i, 3].ToInt32();
-				int x = results[i, 0].ToInt32() - rw / 2;
-				int y = results[i, 1].ToInt32() - rh / 2;
+				int x = results[i, 0].ToInt32();
+				int y = results[i, 1].ToInt32();
+				int rw = (results[i, 2].ToInt32() - x);
+				int rh = (results[i, 3].ToInt32() - y);
 
 				float score = results[i, 4].ToSingle();
 				int sort = results[i, 5].ToInt32();
@@ -265,15 +264,12 @@ namespace YoloSharp
 					}
 				}
 
-
-				yolo.to(modelType);
 				var (miss, err) = yolo.load_state_dict(state_dict, skip: skipList);
 				if (skipList.Count > 0)
 				{
 					Console.WriteLine("Waring! You are skipping nc reference layers.");
 					Console.WriteLine("This will get wrong result in Predict, sort count loaded in weight is " + nc);
 				}
-				yolo.to(dtype);
 			}
 		}
 
