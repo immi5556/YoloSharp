@@ -76,7 +76,7 @@ namespace YoloSharp
 			{
 				image.Write(memoryStream, MagickFormat.Png);
 				memoryStream.Position = 0;
-				return torchvision.io.read_image(memoryStream);
+				return torchvision.io.read_image(memoryStream, torchvision.io.ImageReadMode.RGB);
 			}
 		}
 
