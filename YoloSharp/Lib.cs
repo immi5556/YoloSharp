@@ -1,9 +1,6 @@
 ﻿using ImageMagick;
-using System.Diagnostics.Metrics;
-using System.Threading.Channels;
 using TorchSharp;
 using static TorchSharp.torch;
-using static TorchSharp.torchvision;
 
 namespace YoloSharp
 {
@@ -91,27 +88,5 @@ namespace YoloSharp
 			return new MagickImage(memoryStream, MagickFormat.Png);
 		}
 
-		/// <summary>
-		/// Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the	top-left corner and(x2, y2) is the bottom-right corner.Note: ops per 2 channels faster than per channel.
-		/// </summary>
-		/// <param name="x">The input bounding box coordinates in (x, y, width, height) format.</param>
-		/// <returns>The bounding box coordinates in (x1, y1, x2, y2) format.</returns>
-		internal static Tensor xywh2xyxy(Tensor x)
-		{
-			using (NewDisposeScope())
-			{
-				if (x.shape.Last() != 4)
-				{
-					throw new ArgumentException("input shape last dimension expected 4 but input shape is {x.shape}");
-				}
-
-				Tensor y = empty_like(x);  // faster than clone/copy
-				Tensor xy = x[TensorIndex.Ellipsis, ..2];  //centers
-				Tensor wh = x[TensorIndex.Ellipsis, 2..] / 2;  // half width-height
-				y[TensorIndex.Ellipsis, ..2] = xy - wh; //# top left xy
-				y[TensorIndex.Ellipsis, 2..] = xy + wh; //bottom right xy
-				return y.MoveToOuterDisposeScope();
-			}
-		}
 	}
 }

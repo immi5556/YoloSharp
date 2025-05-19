@@ -25,31 +25,31 @@ namespace YoloSharp
 		private Module<Tensor[], Tensor, Tensor, (Tensor, Tensor)> loss;
 		private torch.Device device;
 		private torch.ScalarType dtype;
-		private int socrCount;
+		private int sortCount;
 		private YoloType yoloType;
 
-		public Segmenter(int socrCount = 80, YoloType yoloType = YoloType.Yolov8, YoloSize yoloSize = YoloSize.n, DeviceType deviceType = DeviceType.CUDA, ScalarType dtype = ScalarType.Float32)
+		public Segmenter(int sortCount = 80, YoloType yoloType = YoloType.Yolov8, YoloSize yoloSize = YoloSize.n, DeviceType deviceType = DeviceType.CUDA, ScalarType dtype = ScalarType.Float32)
 		{
 			torchvision.io.DefaultImager = new torchvision.io.SkiaImager();
-			if (yoloType == YoloType.Yolov5 || yoloType == YoloType.Yolov5u)
+			if (yoloType == YoloType.Yolov5 || yoloType == YoloType.Yolov5u || yoloType == YoloType.Yolov12)
 			{
-				throw new ArgumentException("Segmenter not support yolov5. Please use yolov8 or yolov11 instead.");
+				throw new ArgumentException("Segmenter not support yolov5, yolov5u or yolov12. Please use yolov8 or yolov11 instead.");
 			}
 
 			this.device = new torch.Device((TorchSharp.DeviceType)deviceType);
 			this.dtype = (torch.ScalarType)dtype;
-			this.socrCount = socrCount;
+			this.sortCount = sortCount;
 			this.yoloType = yoloType;
 			yolo = yoloType switch
 			{
-				YoloType.Yolov8 => new Yolov8Segment(socrCount, yoloSize, device, this.dtype),
-				YoloType.Yolov11 => new Yolov11Segment(socrCount, yoloSize, device, this.dtype),
+				YoloType.Yolov8 => new Yolov8Segment(sortCount, yoloSize, device, this.dtype),
+				YoloType.Yolov11 => new Yolov11Segment(sortCount, yoloSize, device, this.dtype),
 				_ => throw new NotImplementedException("Yolo type not supported."),
 			};
 			loss = yoloType switch
 			{
-				YoloType.Yolov8 => new Loss.SegmentationLoss(this.socrCount),
-				YoloType.Yolov11 => new Loss.SegmentationLoss(this.socrCount),
+				YoloType.Yolov8 => new Loss.SegmentationLoss(this.sortCount),
+				YoloType.Yolov11 => new Loss.SegmentationLoss(this.sortCount),
 				_ => throw new NotImplementedException("Yolo type not supported."),
 			};
 			//Tools.TransModelFromSafetensors(yolo, @".\yolov8n-seg.safetensors", @".\PreTrainedModels\yolov11x-seg.bin");
@@ -257,7 +257,7 @@ namespace YoloSharp
 					if (layerPattern != null)
 					{
 						skipList = state_dict.Keys.Where(x => Regex.IsMatch(x, layerPattern)).ToList();
-						if (state_dict[skipList.LastOrDefault(a=>a.EndsWith(".bias"))!].shape[0] == socrCount)
+						if (state_dict[skipList.LastOrDefault(a => a.EndsWith(".bias"))!].shape[0] == sortCount)
 						{
 							skipList.Clear();
 						}
