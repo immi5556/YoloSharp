@@ -288,9 +288,9 @@ namespace YoloSharp
 				//var BCEcls = new FocalLoss(BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_cls_pw }, device: this.device)), fl_gamma);
 				//var BCEobj = new FocalLoss(BCEWithLogitsLoss(pos_weights: torch.tensor(new float[] { h_obj_pw }, device: this.device)), fl_gamma);
 
-				var lcls = zeros(1, device: device, dtype: dtype);  // class loss
-				var lbox = zeros(1, device: device, dtype: dtype);  // box loss
-				var lobj = zeros(1, device: device, dtype: dtype);  // object loss
+				var lcls = zeros(1, device: device, dtype: float32);  // class loss
+				var lbox = zeros(1, device: device, dtype: float32);  // box loss
+				var lobj = zeros(1, device: device, dtype: float32);  // object loss
 
 				var (tcls, tbox, indices, anchors) = build_targets(preds, targets);
 				Tensor tobj = zeros(0);
@@ -357,13 +357,9 @@ namespace YoloSharp
 				}
 
 				lbox *= h_box;
-
 				lobj *= h_obj;
-
 				lcls *= h_cls;
-
 				long bs = tobj.shape[0];  // batch size
-
 
 				return ((lbox + lobj + lcls) * bs, cat(new Tensor[] { lbox, lobj, lcls }).detach());
 			}
@@ -555,7 +551,7 @@ namespace YoloSharp
 				using var _ = NewDisposeScope();
 				this.device = preds[0].device;
 				this.dtype = preds[0].dtype;
-				Tensor loss = torch.zeros(3, device: this.device, dtype: this.dtype); // box, cls, dfl
+				Tensor loss = torch.zeros(3, device: this.device, dtype: float32); // box, cls, dfl
 				Tensor[] feats = (Tensor[])preds.Clone();
 				List<Tensor> feats_mix = new List<Tensor>();
 				foreach (Tensor xi in feats)
@@ -589,7 +585,7 @@ namespace YoloSharp
 				var (_, target_bboxes, target_scores, fg_mask, _) = assigner.forward(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype), anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt);
 
 				var target_scores_sum = torch.max(target_scores.sum());
-				loss[1] = this.bce.forward(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum;  // BCE
+				loss[1] = this.bce.forward(pred_scores, target_scores).sum() / target_scores_sum;  // BCE
 																											 //float loss1 = (this.bce.forward(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum).ToSingle();  // BCE
 				if (fg_mask.sum().ToInt64() > 0)
 				{
@@ -599,8 +595,7 @@ namespace YoloSharp
 				loss[0] *= this.hyp_box;  // box gain
 				loss[1] *= this.hyp_cls;// cls gain
 				loss[2] *= this.hyp_dfl;// dfl gain
-				return ((loss.sum() * batch_size).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
-				//return ((loss.sum()).MoveToOuterDisposeScope(), loss.detach().MoveToOuterDisposeScope());
+				return ((loss.sum() * batch_size).MoveToOuterDisposeScope(), loss.MoveToOuterDisposeScope());
 			}
 
 			private Tensor bbox_decode(Tensor anchor_points, Tensor pred_dist)
@@ -788,7 +783,7 @@ namespace YoloSharp
 					var (_, target_bboxes, target_scores, fg_mask, target_gt_idx) = assigner.forward(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype), anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt);
 					var target_scores_sum = torch.max(target_scores.sum());
 					loss[2] = this.bce.forward(pred_scores, target_scores).sum() / target_scores_sum; //BCE
-					if (fg_mask.sum().ToDouble() > 0)
+					if (fg_mask.sum().ToSingle() > 0)
 					{
 						(loss[0], loss[3]) = new BboxLoss().forward(pred_distri, pred_bboxes, anchor_points, target_bboxes / stride_tensor, target_scores, target_scores_sum, fg_mask);
 						loss[1] = calculate_segmentation_loss(fg_mask, masks, target_gt_idx, target_bboxes, /*batch_idx,*/ proto, pred_masks, imgsz, this.over_laps);

@@ -89,7 +89,6 @@ namespace YoloSharp
 						i = i[TensorIndex.Slice(0, max_det)]; // limit detections
 
 						output[xi] = x[i];
-						output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)] = torchvision.ops.box_convert(output[xi][TensorIndex.Ellipsis, TensorIndex.Slice(0, 4)], torchvision.ops.BoxFormats.xyxy, torchvision.ops.BoxFormats.cxcywh);
 
 						if ((DateTime.Now - t).TotalSeconds > time_limit)
 						{
@@ -161,7 +160,7 @@ namespace YoloSharp
 					int max_nms = 30000; // maximum number of boxes into torchvision.ops.nms()
 					float time_limit = 0.5f + 0.05f * bs; // seconds to quit after
 
-					prediction[TensorIndex.Ellipsis, ..4] = Lib.xywh2xyxy(prediction[TensorIndex.Ellipsis, ..4]);
+					prediction[TensorIndex.Ellipsis, ..4] =torchvision.ops.box_convert (prediction[TensorIndex.Ellipsis, ..4], torchvision.ops.BoxFormats.cxcywh, torchvision.ops.BoxFormats.xyxy);
 					DateTime t = DateTime.Now;
 
 					List<Tensor> output = new List<Tensor>(new Tensor[bs]);

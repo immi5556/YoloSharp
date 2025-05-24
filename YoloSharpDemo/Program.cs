@@ -11,17 +11,17 @@ namespace YoloSharpDemo
 			string trainDataPath = @"..\..\..\Assets\DataSets\coco128"; // Training data path, it should be the same as coco dataset.
 			string valDataPath = string.Empty; // If valDataPath is "", it will use trainDataPath as validation data.
 			string outputPath = "result";    // Trained model output path.
-			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov11n.bin"; // Pretrained model path.
-			string predictImagePath = @"..\..\..\Assets\TestImage\bus.jpg";
+			string preTrainedModelPath = @"..\..\..\Assets\PreTrainedModels\yolov8n.bin"; // Pretrained model path.
+			string predictImagePath = @"..\..\..\Assets\TestImage\zidane.jpg";
 			int batchSize = 16;
 			int sortCount = 80;
 			int epochs = 100;
 			float predictThreshold = 0.25f;
 			float iouThreshold = 0.7f;
 
-			YoloType yoloType = YoloType.Yolov11;
+			YoloType yoloType = YoloType.Yolov8;
 			DeviceType deviceType = DeviceType.CUDA;
-			ScalarType dtype = ScalarType.Float32;
+			ScalarType dtype = ScalarType.Float16;
 			YoloSize yoloSize = YoloSize.n;
 
 			MagickImage predictImage = new MagickImage(predictImagePath);
@@ -33,7 +33,7 @@ namespace YoloSharpDemo
 			// Train model
 			predictor.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: true);
 			predictor.LoadModel(Path.Combine(outputPath, "best.bin"));
-			
+
 			// ImagePredict image
 			List<Predictor.PredictResult> predictResult = predictor.ImagePredict(predictImage, predictThreshold, iouThreshold);
 			var resultImage = predictImage.Clone();
@@ -43,8 +43,8 @@ namespace YoloSharpDemo
 			//segmenter.LoadModel(preTrainedModelPath, skipNcNotEqualLayers: true);
 
 			//// Train model
-			////segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
-			////segmenter.LoadModel(Path.Combine(outputPath, "best.bin"));
+			//segmenter.Train(trainDataPath, valDataPath, outputPath: outputPath, batchSize: batchSize, epochs: epochs, useMosaic: false);
+			//segmenter.LoadModel(Path.Combine(outputPath, "best.bin"));
 
 			//// ImagePredict image
 			//var (predictResult, resultImage) = segmenter.ImagePredict(predictImage, predictThreshold, iouThreshold);

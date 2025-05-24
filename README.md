@@ -72,7 +72,7 @@ List<Predictor.PredictResult> predictResult = predictor.ImagePredict(predictImag
 ```
 Use yolov5n pre-trained model to detect.
 
-![image](https://github.com/user-attachments/assets/d32f7805-9f98-4530-bda6-43630c765159)
+![image](https://raw.githubusercontent.com/IntptrMax/YoloSharp/refs/heads/master/Assets/zidane.jpg)
 
 ### Segment
 
@@ -95,4 +95,4 @@ var (predictResult, resultImage) = segmenter.ImagePredict(predictImage, predictT
 
 Use yolov8n-seg pre-trained model to detect.
 
-![pred_seg](https://github.com/user-attachments/assets/898f4e75-e99d-434a-b910-1d87aabe4cb0)
+![pred_seg](https://raw.githubusercontent.com/IntptrMax/YoloSharp/refs/heads/master/Assets/bus.jpg)
